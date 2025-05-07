@@ -1,0 +1,799 @@
+---
+title: "Temperature data option calculation"
+date-modified: "`r Sys.Date()`"
+editor: source
+format:
+  html: 
+    code-tools: true
+    code-fold: true
+    code-summary: "Show code"
+    html-table-processing: none
+    df-print: kable
+    code-block-border-left: "royalblue"
+    code-block-bg: true
+    # monofont: sans
+toc: true
+self-contained: true
+number-sections: true
+lang: en
+author:
+  - name: Pietro Rota
+    id: PR
+    email: pietro.rota01@icatt.it
+    affiliation: 
+      - name: Università cattolica del sacro cuore
+        city: Milano
+        state: IT
+        url: https://www.unicatt.it/
+project:
+  type: website
+  output-dir: docs
+---
+
+# Weather Derivatives Temperature Options
+
+```{r}
+#| title: setup
+#| include: false
+source("C:/Users/pietr/OneDrive/Desktop/formula.main.R")
+Sys.setlocale("LC_TIME", "English") # set output language in English
+theme_set(theme_minimal())
+knitr::opts_chunk$set(fig.align = 'center')
+
+select <- dplyr::select
+```
+
+<details>
+
+<summary>Full dependencies list, click to expand list</summary>
+
+Functions loaded from main
+
+```{r functions_loaded, echo=FALSE}
+file <- "C:/Users/pietr/OneDrive/Desktop/temp data.qmd"
+functions_loaded(file)
+```
+
+Packages required to run this file
+
+```{r required_packages}
+required_packages(file)
+```
+
+Functions defined in this document
+
+```{r required_functions, echo=FALSE}
+required_functions(file)
+```
+
+```{r}
+cat("time of creation", "\n")
+print(file.info(file)$ctime, "\n")
+cat("LAST MODIFICATION", "\n")
+print(file.info(file)$mtime, "\n")
+cat("Last Access", "\n")
+print(file.info(file)$mtime, "\n")
+```
+
+</details>
+
+**References**:
+
+1.  Weather Futures and Options (CME Group Inc, 2021) \[[LINK](https://www.cmegroup.com/trading/weather/files/weather-fact-card.pdf)\]
+
+2.  Managing Climate Risk with CME Group Weather Futures and Options (Dominic Sutton-Vermeule, 20-Jan 2021) \[[LINK](https://www.cmegroup.com/education/articles-and-reports/managing-climate-risk-with-cme-group-weather-futures-and-options.html)\]
+
+3.  MANAGING CLIMATE RISK IN THE U.S. FINANCIAL SYSTEM, ISBN: 978-0-578-74841-2 (2020) \[[LINK](https://www.cftc.gov/sites/default/files/2020-09/9-9-20%20Report%20of%20the%20Subcommittee%20on%20Climate-Related%20Market%20Risk%20-%20Managing%20Climate%20Risk%20in%20the%20U.S.%20Financial%20System%20for%20posting.pdf)\]
+
+# Climate data download
+
+Much of the weather market is dominated by temperature derivatives, aimed to protect the holder from unexpected temperature prints. The underlying used to trade these contracts is either Heating Degree Days (HDD) or Cooling Degree Days (CDD). For a specific day n, these can be defined as:
+
+The most popular temperature instruments traded are options, whose payoff function depends on a cumulative sum over a longer period, usually an entire season:
+
+$HDDn = \max(T_{ref} - T_n, 0)$
+
+$CDDn = \max(T_n - T_{ref}, 0)$
+
+| Option Type | Protection Against | Exercise When | Payout | Example |
+|--------------|--------------|--------------|-----------------|--------------|
+| HDD call | Overly cold winters | HDD \> K | $\alpha \cdot$ (HDD - K) | Farmers |
+| HDD **put** | Overly warm winters | HDD \< K | $\alpha \cdot$ (K - HDD) | Ski resorts |
+| CDD call | Overly hot summers | CDD \> K | $\alpha \cdot$ (CDD - K) | Utilities |
+| CDD **put** | Overly cold summers | CDD \< K | $\alpha \cdot$ (K - CDD) | Beaches |
+
+: Calls protect you from extreme circumstances, meanwhile puts protect you from mild climates
+
+NASA Prediction Of Worldwide Energy Resources (POWER) \| Data Access Viewer (DAV) \[[LINK](https://power.larc.nasa.gov/data-access-viewer/)\]
+
+This dataset is from the Agroclimatology community, which is crucial for ensuring reproducibility in climate research.
+
+This study utilizes temperature data obtained from the MERRA-2 (Modern-Era Retrospective analysis for Research and Applications, Version 2) dataset, which provides detailed meteorological measurements at a spatial resolution of 0.5 x 0.625 degrees latitude/longitude.
+
+The specific region analyzed, with an average elevation of 288.19 meters, is located at a latitude of 45.5330, and longitude of 9.1911.
+
+```{r MAP, include=FALSE}
+#| column: screen
+library(leaflet, quietly = TRUE, warn.conflicts = FALSE)
+map_data <- data.frame(
+  name = "Location",
+  lat = 45.53308333,
+  lon = 9.1911111
+)
+# Create a leaflet map
+leaflet(map_data) %>%
+  addTiles() %>%  # Add default OpenStreetMap tiles
+  addMarkers(~lon, ~lat, label = ~name, ) %>%
+  addCircleMarkers(~lon, ~lat, radius = 10, color = "red", fillOpacity = 0.8) %>% 
+  setView(lng = map_data$lon, lat = map_data$lat, zoom = 12)
+```
+
+It is important to note that the dataset uses a value of -999 to denote missing data, which I've removed and replaced with the mean of the overall dataset. Either when a parameter cannot be computed or falls outside the range of available source data
+
+Parameter(s):
+
+-   T2M_MAX = Temperature at 2 Meters Max for the day (C)
+
+-   T2M_MIN = Temperature at 2 Meters Min for the day (C)
+
+-   T2M_AVG = $\frac {T_{MIN}+T_{MAX}}2$ Temperature at 2 Meters Average for the day (C)
+
+Temperature at 2 meters refers to the air temperature measured 2 meters (approximately 6.5 feet) above the ground. This is the standard height for temperature measurements used in meteorology because it minimizes the effects of ground heating or cooling, providing a more accurate reflection of the ambient air temperature experienced by humans and relevant to various economic activities.
+
+**Why? Temperature at 2 meters** is commonly used as the basis for weather derivatives. This is because:
+
+-   **Standardization**: Temperature at 2 meters is a standardized and widely available data point, making it reliable for use in financial contracts.
+
+-   **Relevance**: Many weather-related risks, such as heating degree days (HDD) and cooling degree days (CDD), are calculated based on temperatures at this height. These metrics are commonly used in weather derivatives to hedge against risks related to heating and cooling needs.
+
+-   **Accuracy**: Because it represents the temperature most relevant to human activities and energy consumption, it is directly applicable for creating and settling weather derivatives that are based on temperature-related indices.
+
+```{r Dataset download}
+ORIGINAL_DATASET <- read.csv("C:/Users/pietr/OneDrive/Desktop/POWER_Point_Daily_19810101_20250228_045d53N_009d19E_LST.csv", skip = 10)
+
+DATASET <- ORIGINAL_DATASET %>% 
+  mutate(T_MAX=remove_outliers(T2M_MAX, fill = "NA") %>% na.approx) %>% 
+  mutate(T_MIN=remove_outliers(T2M_MIN, fill = "NA") %>% na.approx) %>% 
+  mutate(DAY = as.Date(ORIGINAL_DATASET$DOY - 1, origin = paste0(ORIGINAL_DATASET$YEAR, "-01-01"))) %>%
+  mutate(Month=month(DAY)) %>% 
+  select(c(DAY, YEAR, Month, DOY, T_MAX, T_MIN))
+  
+
+DATASET$T_AVG <- apply(DATASET[c("T_MAX", "T_MIN")], 1, mean)
+
+ORIGINAL_DATASET[ifelse(find_outliers(ORIGINAL_DATASET$T2M_MAX)==0,FALSE,TRUE),] %>% 
+  gt() %>% 
+  opt_stylize(5) %>% 
+  tab_header(title = "Days where the sensor malfunctioned", subtitle = "identified by remove outliers")
+
+datatable(smart_round(DATASET, digits = 3))
+```
+
+## Initial data visualization
+
+```{r Initial Viz}
+cleandataset <- DATASET %>% 
+  select(c(T_MAX, T_MIN, T_AVG)) %>% 
+  xts(order.by = DATASET$DAY)
+
+desc_df(cleandataset)
+
+cleandataset %>% 
+  ggplot(aes(x=index(.)))+
+  geom_line(aes(y=T_MAX, color = "T_MAX"))+
+  geom_line(aes(y=T_MIN, color = "T_MIN"))+
+  geom_line(aes(y=T_AVG, color = "T_AVG"))+
+  labs(title = "Last 43 years of recorded data", y="Temperature", x=NULL)+
+  scale_color_manual(name = "Temps", 
+                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))
+```
+
+However this is not that useful so let me zoom in on the last third of the database (approximately 2014 onward)
+
+```{r last yrs}
+NDAYS <- nrow(cleandataset)
+lookback <- 365*10
+
+{tail(cleandataset, lookback) %>% 
+  as.data.frame() %>% 
+  mutate(year = index(tail(cleandataset, lookback))) %>% 
+  ggplot(aes(x = year))+
+  geom_line(aes(y=T_MAX, color = "T_MAX"))+
+  geom_line(aes(y=T_MIN, color = "T_MIN"))+
+  geom_line(aes(y=T_AVG, color = "T_AVG"))+
+  labs(title = "Last 10 years of recorded data", y="Temperature", x=NULL)+
+  scale_color_manual(name = "Temps", 
+                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))} %>% 
+  ggplotly() 
+
+# animplot1 <- plot1 +
+#   labs(subtitle = "year: {frame_time}") +
+#   transition_reveal(year) + 
+#   view_follow(fixed_y = TRUE)
+# 
+# animate(animplot1, nframes = 20, renderer = gifski_renderer(), fps = 30, duration = 10, end_pause = 60, res = 100)
+```
+
+## Seasonal analysis
+
+Now i can look at the distribution of my database, first i need to distinguish the data between summer periods and winter periods by taking the day of the year and splitting it so that
+
+Winter \~ October-March
+
+Summer \~ April-September
+
+```{r Distribution of season}
+ DATASET_seas <- DATASET %>%
+  group_by(Month < 4|Month>9) %>%
+  rename("Season"="Month < 4 | Month > 9") %>%
+  mutate(Season = ifelse(Season, "Winter", "Summer"))
+  
+DATASET_seas[-1] %>% 
+  xts(order.by = DATASET$DAY)%>% 
+  show_df() %>% 
+  gt() %>%
+  tab_header(title = "Temperature Overview") %>%
+  opt_stylize(style = 5, add_row_striping = TRUE) %>%
+  cols_align(align = "center") %>%
+  sub_missing(columns = everything(), missing_text = "⋮")
+
+
+winter_dataset <- DATASET_seas[DATASET_seas$Season=="Winter",]
+summer_dataset <- DATASET_seas[DATASET_seas$Season=="Summer",]
+
+cat(paste0("The difference in number of rows is approximately: ", round(nrow(summer_dataset) / nrow(winter_dataset) - 1, 4)*100,"%", ", or ", round((nrow(summer_dataset) / nrow(winter_dataset) - 1)*NDAYS, 1), " days"))
+
+grid.arrange(ncol=2,
+ggplot(winter_dataset)+
+  geom_histogram(aes(x = T_MAX, fill = "T_MAX"), alpha=0.8, bins = 80)+
+  geom_histogram(aes(x = T_MIN, fill = "T_MIN"), alpha=0.8, bins = 80)+
+  geom_histogram(aes(x = T_AVG, fill = "T_AVG"), alpha=0.8, bins = 80)+
+  labs(title = "Distribution charts of winter",x=NULL)+
+  scale_fill_manual(name = NULL, 
+                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))+
+  theme(legend.position = "bottom")
+
+,
+
+ggplot(summer_dataset)+
+  geom_histogram(aes(x = T_MAX, fill = "T_MAX"), alpha=0.8, bins = 80)+
+  geom_histogram(aes(x = T_MIN, fill = "T_MIN"), alpha=0.8, bins = 80)+
+  geom_histogram(aes(x = T_AVG, fill = "T_AVG"), alpha=0.8, bins = 80)+
+  labs(title = "Distribution charts of summer",x=NULL)+
+  scale_fill_manual(name = NULL, 
+                    values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))+
+  theme(legend.position = "bottom")
+
+)
+```
+
+Its with this choice of season im still able to keep the data very balanced. clear to see that there
+
+Lastly I'm able to plot just the two average temperatures of winter and of summer for the average temperatures
+
+```{r SUM vs WIN}
+ggplot()+
+  geom_histogram(data = winter_dataset, aes(x = T_AVG, fill = "Winter"), alpha=0.8, bins = 80)+
+  geom_histogram(data = summer_dataset, aes(x = T_AVG, fill = "Summer"), alpha=0.8, bins = 80)+
+  labs(title = "Distribution charts of the 2 averages",x=NULL)+
+    scale_fill_manual(name = NULL, 
+                    values = c(Winter="steelblue", Summer="orange"))+
+  theme(legend.position = "bottom")
+```
+
+Just to understand the records of my dataset i wanted to see what months on record had the hottest and coldest days across all dataset
+
+```{r hottest/coldest months}
+DATASET_seas %>% 
+  group_by(Month) %>% 
+  summarise(T_min_min = min(T_MIN),
+            T_min_max = max(T_MIN),
+            T_max_min = min(T_MAX),
+            T_max_max = max(T_MAX)) %>% 
+  round(3) %>%
+  mutate(Month = month.abb) %>% 
+  gt() %>% 
+  opt_stylize(5) %>% 
+  tab_header("Data exploration", "what is the highest and lowest in my database") %>% 
+  cols_label(T_min_min = "Min",
+             T_min_max = "Max",
+             T_max_min = "Min",
+             T_max_max = "Max") %>% 
+  tab_spanner(label = "T_MIN", columns = 2:3) %>%  
+  tab_spanner(label = "T_MAX", columns = 4:5)
+```
+
+## Long term trends
+
+```{r}
+SMA(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term trend")
+runSD(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term Standard deviation")
+```
+
+# Seasonal decomposition
+
+The first step in pricing temperature options is to decompose the time series into distinct components that each represent different underlying patterns. This process is essential for understanding the structure of the data and for developing predictive models. In basic temrs it can be expressed as the sum of three main components:$y_t=T_t+S_t+e_t$, Here, $T_t$ is the trend component that captures the long-term movement, $S_t$ represents the seasonal variations (periodic patterns), and $e_t$ refers to the residuals or noise in the data.
+
+which in our case becomes $$\overline{T_t} = T_{trend} + T_{seasonal}+ Residuals$$ The approach was to develop each component indipendently
+
+\[T\_{trend} = a + b\cdot t\]
+
+:
+
+The trend component could be as simple as a straight line or a moving average
+
+This form captures the cyclical nature of temperature changes throughout the year, like daily or annual temperature fluctuations.
+
+\[ T\_{seasonal} = \alpha \cdot \sin(\omega \cdot t + \theta) \]
+
+$$
+T_{seasonal} = \alpha \cdot \sin(\omega \cdot t + \theta)
+$$
+
+-   $\alpha$ represents the amplitude
+
+-   $\omega$ is the angular frequency (related to the period of the cycle)
+
+-   $\theta$ is the phase shift
+
+And lastly the residuals are just: $$Residuals = T_t - T_{trend} + T_{seasonal}$$:
+
+Recent research has suggested that partial Fourier decomposition can be effective in modeling temperature data, particularly by omitting the cosine component. This approach simplifies the seasonal model while still accurately representing the cyclical nature of temperature changes. The sinusoidal term is often sufficient to describe seasonal temperature variations, making the model both interpretable and computationally efficient.
+
+Before this I used a denoising procedure using Gaussian Convolution Filter as it also enhances the effectiveness of the Fourier transformation by reducing noise, allowing you to identify the dominant frequencies or cycles in your temperature data more accurately.
+
+-   **Gaussian Convolution Filter**:
+
+    -   A **convolution** is a mathematical operation used to blend or smooth data. It involves applying a kernel (a small array of weights) across the data to compute a weighted average. The Gaussian kernel is a specific type of convolution filter that assigns weights based on the Gaussian (normal) distribution, which is a bell-shaped curve.
+
+    -   The **Gaussian kernel** is widely used for smoothing because it gives more weight to the central points (closer to the middle) while gradually reducing the weights for points further away. This is mathematically expressed as:
+
+$$
+G(x)=\frac{1}{\sqrt{2π\sigma^2}}\cdot e^{-\frac{x^2}{2\sigma^2}}
+$$
+
+-   **Moving Window**: The Gaussian kernel slides across each point in the time series. For each position, it computes a weighted sum where the weights are defined by the Gaussian kernel.
+
+-   **Local Averaging**: The computed value represents a smoothed average of the points within the window's range. Points closer to the center of the window contribute more heavily to the average than those farther away, as per the Gaussian weights.
+
+-   **Symmetric Filtering**: using 2 sides makes this operation symmetric, applying the kernel both forward and backward across the data, ensuring the filtering effect is centered.
+
+-   **Conclusion and data inspection**: in visual terms the denoised data should look smoother with slightly lower peaks
+
+```{r SEAS DEC + FOURIER}
+temps <- DATASET
+apply_convolution <- function(x, kernel) {
+  # Use filter() from stats package to apply convolution
+  filtered <- stats::filter(x, kernel, sides = 2)  # Use sides = 2 for symmetric filter
+  return(filtered)
+}
+
+# DENOISED - convolution with a window of 90 days
+kernel <- dnorm(-3:3)
+data.frame("Gaussian_Kernel" = round(kernel, 10))
+
+temps$Denoised <- apply_convolution(temps$T_AVG, kernel)
+temps$Denoised <- na.fill(temps$Denoised, mean(temps$Denoised, na.rm = TRUE))
+
+temps$Trend <- SMA(temps$Denoised, n = lookback)
+
+library(nlme, quietly = T, warn.conflicts = F)
+
+# Define the model
+sin_component <- function(t, a, b, alpha, theta) {
+  omega <- 2 * pi / 365.25
+  a + b * t + alpha * sin(omega * t + theta)
+}
+omega <- 2 * pi / 365.25
+
+# Fit model using non linear squares
+temps$NUM_DAY <- 1:nrow(temps)
+
+fit <- nls(Denoised ~ sin_component(NUM_DAY, a, b, alpha, theta),
+           data = temps,
+           start = list(a = 1, b = 0, alpha = 1, theta = 0))
+
+
+# Get coefficients and confidence intervals for the model
+params <- coef(fit)
+confint_fit <- confint(fit)
+
+temps$SEAS <- params["alpha"] * sin(omega * temps$NUM_DAY + params["theta"])
+temps$TREND <- params["a"] + params["b"] * temps$NUM_DAY
+temps$BAR <- temps$TREND + temps$SEAS
+temps$RESID <-  temps$T_AVG - temps$TREND - temps$SEAS
+```
+
+just to be certain i looked at if the residuals and the fitted values matched the $\overline T$ and $Residuals$ by checking percentage of same values as the rounding decimals increase The logic is that if the data sets are anything alike (like 2 different models results for the same dataset) you should see how far in the rounding are the data sets similar
+
+```{r}
+cat("T_BAR VS fitted from the non linear squares \n")
+check_acc(temps$BAR, fitted(fit),15)
+
+cat("T_BAR VS fitted from the non linear squares \n")
+check_acc(temps$RESID, residuals(fit),15)
+```
+
+## Model performance
+
+for assessing my model performance I'm looking at the values and confidence intervals and looking at the Residual sum of squares and the mean absolute error
+
+-   The **RSS function** calculates the Residual Sum of Squares, which is a measure of the discrepancy between the observed data and the model's predictions. A lower RSS indicates a better fit of the model to the data, meaning that the model's predictions are closer to the actual observed values.
+
+-   The **MAE function** is the average of the absolute differences between the observed and predicted values. It gives an idea of how far, on average, the predictions are from the actual values, without considering the direction of the error. A lower MAE indicates that the model's predictions are generally close to the observed data.
+
+```{r performance, echo=FALSE}
+# Print Model 
+for (i in 1:length(params)) {
+  cat(names(params)[i], ": ", round(params[i], 3), 
+      " CI ~normally [", round(confint_fit[i, 1], 3), ",", round(confint_fit[i, 2], 3), "]\n")
+  }
+
+# Model performance
+cat("  RSS model sine curve:", round(RSS(temps$T_AVG, temps$BAR), 2), "\n")
+cat("  MAE model fit:", round(MAE(temps$BAR, temps$T_AVG), 2), "\n")
+
+# fix the trend by using the linear trend
+temps$Trend <- temps$Trend %>% na.fill(params["a"] + params["b"] * 1:lookback)
+```
+
+## Visualization of results
+
+```{r FOURIER VIZ, fig.width=8}
+# plot denoised 
+ggplot(tail(temps, lookback), aes(x=DAY))+
+  geom_point(aes(y = T_AVG, color = "Average"), size = 1)+
+  geom_point(aes(y = Denoised, color = "Denoised"), size = 1)+
+  scale_color_manual(name=NULL, values = c(Average = "royalblue", Denoised = "#ffcc00"))+
+  labs(title = "Average temperature", x = "Date", y = "Temperature", 
+       subtitle = "Before and after the gaussian convolution filter")
+
+temps_xts <- temps %>%
+  select(T_AVG, Denoised, TREND, SEAS, RESID) %>%
+  xts(order.by = temps$DAY) %>%
+  tail(lookback)
+
+# Plot seasonal decomposition from Avg to residuals
+grid.arrange(nrow=5, top = paste0("Classical decomposition - last ",  lookback/365, " years"), 
+             
+             temps_xts$T_AVG %>% 
+             quickplot(subtitle = "Average Temperature", show_legend = F, xlab = NULL, ylab = "Temps"),
+
+             temps_xts$Denoised %>% 
+             quickplot(subtitle = "Denoised", show_legend = F, xlab = NULL, ylab = "Temps"),
+
+             temps_xts$TREND %>% 
+             quickplot(subtitle = "Trend", show_legend = F, xlab = NULL, ylab = "Temps"),
+
+             temps_xts$SEAS %>% 
+             quickplot(subtitle = "Seasonal", show_legend = F, xlab = NULL, ylab = "Temps"), 
+             
+             temps_xts$RESID %>% 
+             quickplot(subtitle = "Residuals", show_legend = F, xlab = NULL, ylab = "Temps"))
+
+# Plot original vs. fitted data
+ggplot(temps, aes(x = DAY)) +
+  geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
+  geom_line(aes(y = BAR), color = 'orange', linewidth=2) +
+  labs(title = "Temperature Model Fit (all Observations)", y = "Temperature (deg C)")
+```
+
+### Check for possible model degradation
+
+Checking for model degradation across time by looking at the first and last 10 years to see if there is a meaningful shift in where the sine curve and the average temperature
+
+```{r Time degrad, fig.width = 9}
+grid.arrange(nrow = 2, ncol = 2,
+ggplot(temps %>% head(lookback), aes(x = DAY)) +
+  geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
+  geom_line(aes(y = BAR), color = 'orange', linewidth=2) +
+  labs(title = paste0("Temperature Model Fit (First ", lookback/365, " years)"),x=NULL, y = NULL),
+
+ggplot(temps %>% head(lookback), aes(x = DAY)) +
+  geom_line(aes(y = RESID), color = 'black', linewidth=0.5) +
+  labs(title = paste0("Residuals (First ", lookback/365, " years)"),x=NULL, y = NULL),
+
+ggplot(temps %>% tail(lookback), aes(x = DAY)) +
+  geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
+  geom_line(aes(y = BAR), color = 'orange', linewidth=2) +
+  labs(title = paste0("Temperature Model Fit (Last ", lookback/365, " years)"), x=NULL, y = NULL),
+
+ggplot(temps %>% tail(lookback), aes(x = DAY)) +
+  geom_line(aes(y = RESID), color = 'black', linewidth=0.5) +
+  labs(title = paste0("Residuals (Last ", lookback/365, " years)"),x=NULL, y = NULL)
+)
+```
+
+## Residuals analysis and diagnostics
+
+1.  **Autocorrelation Function (ACF) Plot of Residuals**:
+
+    The ACF plot checks for any correlation between residuals at different lags. If residuals are uncorrelated (i.e., resemble white noise), all values should fall within the confidence bands, indicating no significant autocorrelation.
+
+2.  **Partial Autocorrelation Function (PACF) Plot of Residuals**:
+
+    The PACF plot displays the partial correlation of residuals with their own lagged values, considering the effect of any intermediate lags. Like the ACF plot, if the model fits well, the PACF values should also fall within the confidence bands, showing no significant partial autocorrelations.
+
+3.  **Normality Check using QQ Plot**:
+
+    The QQ plot assesses whether the residuals are normally distributed. Points should lie along the reference line; significant deviations from this line suggest that the residuals do not follow a normal distribution, which could imply model misspecification or the presence of outliers.
+
+4.  **Histogram of Residuals with Normal Curve**:
+
+    The histogram visualizes the distribution of residuals, and the overlaid normal curve helps assess normality. If the histogram closely follows the bell-shaped curve, it suggests normal residuals. The vertical line representing kurtosis indicates whether the residuals are more or less peaked than a normal distribution.
+
+5.  **Residuals vs. Fitted Values Plot**:
+
+    The plot checks for patterns in the residuals against fitted values. Ideally, the residuals should be randomly scattered around zero, indicating homoscedasticity (constant variance). Any visible pattern or trend suggests issues like non-linearity, heteroscedasticity, or omitted variables.
+
+```{r Resid analysis}
+grid.arrange(nrow = 2, 
+# ACF 
+ggAcf(temps$RESID, lag.max = 100)+
+  labs(title = "ACF of Residuals", x = NULL, y = NULL),
+
+# PACF
+ggPacf(temps$RESID, lag.max = 100)+
+  labs(title = "PACF of Residuals", x = NULL, y = NULL),
+
+## Check normality of residuals using QQ plot
+ggplot(temps, aes(sample = RESID)) +
+  stat_qq(color="royalblue")+
+  stat_qq_line(color = "black", linewidth = 0.4)+
+  labs(title = "QQ plot", x="Theoretical Quantiles", y= "Observed Quantiles"),
+
+## Check for heteroskedasticity or any pattern in residuals
+ggplot(temps %>% tail(lookback), aes(x=BAR, y = RESID))+
+  geom_point(size = 0.4)+
+  geom_smooth(method = "lm")+
+  labs(title = paste0("Residuals vs Fitted - last ",  lookback/365, " years"), x= "Fitted Values", y = "Residuals"))
+
+# Histogram with bell curve and kurtosis
+ggplot(temps, aes(x = RESID)) +
+  geom_histogram(aes(y = after_stat(density)), fill = "lightblue", bins = 30) +
+  stat_function(fun = dnorm, args = list(mean = mean(temps$RESID), sd = sd(temps$RESID)), 
+                color = "red", linewidth = 1.2) +
+  # geom_vline(xintercept = skewness(temps$RESID)[1], linetype = "dashed", linewidth=1, color = "darkred")+
+  labs(title = "Histogram of Residuals with Normal Curve", x = "Residuals", y = "Density", 
+       # subtitle = "Vertical line is kurtosis"
+       )
+```
+
+# Ornstein-Uhlenbeck (OU) process
+
+Temperature dynamics using a mean-reverting stochastic process like the Ornstein-Uhlenbeck (OU) process, incorporate the seasonal adjustment into the drift rate to ensure that the expected value of the temperature follows the seasonal mean temperature.
+
+The Ornstein-Uhlenbeck (OU) process is a type of stochastic (random) process that is often used in physics, finance, and other fields to model systems that exhibit some form of "mean-reverting" behavior. Let’s start from the basics to understand what this means.
+
+A stochastic process is a collection of random variables representing the evolution of a system over time. In simpler terms, it describes how something changes when randomness is involved. For example, the price of a stock or the position of a particle under the influence of random forces can be modeled as a stochastic process.
+
+$$
+dX_t = \kappa (\mu−X_t) \ d_t + \sigma \cdot dW_t 
+$$
+
+-   $X_t$ is the value of the process at time t.
+-   $\mu$ is the long-term mean or equilibrium level toward which the process reverts.
+-   $\theta>0$ is the rate of mean reversion, determining how fast the process reverts to the mean P.
+-   $\sigma >0$ is the volatility or the intensity of the random fluctuations.
+-   $dW_t$ is an infinitesimal increment of a Wiener process (Brownian motion).
+
+**Mean Reversion Term:** $\kappa (\mu−X_t) \ d_t$ : Representing the tendency of the process to revert to the mean $\mu$. If $X_t$is above the mean $\mu$, this term will be negative (pulling it down toward the mean). If $X_t$ is below $\mu$, the term will be positive (pushing it up toward the mean).
+
+The speed of this pull or push is determined by $\kappa$. A higher $\kappa$ means the process will revert to the mean faster.
+
+**Random Fluctuation Term** $\sigma \cdot dW_t$ : represents the random noise or shock. This is a source of randomness, and it causes the process to deviate randomly over time.
+
+The size of the noise is controlled by $\sigma$, which is the volatility parameter.
+
+```{r OU2}
+temps_OU <- temps
+# Define parameters for the OU process
+kappa <- 1-arima(temps_OU$RESID, order = c(1,0,0))$coef[1]  # Mean-reversion rate
+sigma <- 0.1                                                # Volatility of the process
+dt <- 1                                                     # Time step (daily data)
+
+cat("Kappa is estimated as:", round(kappa,4))
+
+# Initialize variables for simulation
+n <- nrow(temps_OU)                      # Number of time points
+T_simulated <- numeric(n)                # Simulated temperature vector
+T_simulated[1] <- temps_OU$Denoised[1]   # Set initial temperature to the first observed value
+
+# Simulate the seasonal mean as a time-varying mean (trend + seasonal component)
+T_bar <- temps_OU$BAR
+
+# Simulate the modified OU process
+for (i in 2:n) {
+  # Rate of change of the seasonal mean
+  dT_bar_dt <- (T_bar[i] - T_bar[i - 1]) / dt
+  
+  # Brownian motion increment
+  dWt <- rnorm(1, mean = 0, sd = sqrt(dt))
+  
+  T_simulated[i] <- T_simulated[i - 1] + 
+                    (dT_bar_dt + kappa * (T_bar[i] - T_simulated[i - 1])) * dt + 
+                    sigma * dWt
+}
+
+temps_OU$OU <- T_simulated
+
+DATE <- tail(temps$DAY, lookback)
+
+ggplotly(
+  temps_OU %>%
+    select(Denoised, OU, BAR) %>%
+    tail(lookback) %>%
+    round(4) %>%
+    
+    ggplot(aes(x = DATE)) +
+    geom_point(aes(y = Denoised, color = "Observed"), size = 0.5) +
+    geom_line(aes(y = OU, color = "Simulated"), linewidth = 0.8) +
+    geom_line(aes(y = BAR, color = "Model fit"), linewidth = 0.5) +
+    scale_color_manual(name = NULL, values = c(Observed = "blue", Simulated = "darkgreen", "Model fit" = "red")) +
+    labs(title = "Simulated Ornstein-Uhlenbeck Process for Temperature - Last 10 years", x = "Day", y = "Temperature")
+)
+```
+
+# Sidequests
+
+## Sidequest: AR modeling
+
+Fit an AR(1) model if there is significant autocorrelation
+
+```{r AR1}
+ar1_model <- arima(temps$RESID, order = c(1,0,0))
+
+summary(ar1_model)
+
+ar1_fitted <- fitted(ar1_model)
+  
+quickplot(ar1_fitted, title = paste0("AR(", length(ar1_model$coef), ") Model fitted"))
+```
+
+## Sidequest: overlap of the dataset
+
+One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
+
+```{r each year overlapped}
+pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_AVG) %>%
+  pivot_wider(names_from = YEAR, values_from = T_AVG)
+
+
+MAX_pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_MAX) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MAX)
+
+MIN_pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_MIN) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MIN)
+
+
+MEAN <- apply(pivot_df[-1], 1, mean, na.rm=TRUE)
+MEDIAN <- apply(pivot_df[-1], 1, median, na.rm=TRUE)
+IQR <- apply(pivot_df[-1], 1, IQR, na.rm=TRUE)
+SD <- apply(pivot_df[-1], 1, sd, na.rm=TRUE)
+
+data.frame(MEAN = MEAN,
+           MEDIAN = MEDIAN) %>% 
+  quickplot(title = "Mean and median across the year", xlab = "Day of the year", ylab = "Temperature")
+
+data.frame(IQR = SMA(IQR, n = 7),
+           SD = SD) %>% 
+  quickplot(title = "Standard deviation and Inter-quartile-range across the year",
+            subtitle = "IQR MA(7)", xlab = "Day of the year", ylab = "Temperature")
+
+data.frame(MAX = apply(pivot_df[-1], 1, max, na.rm=TRUE), 
+           MIN = apply(pivot_df[-1], 1, min, na.rm=TRUE)) %>%
+  mutate(AVG = (MAX + MIN)/2) %>% 
+  mutate(RANGE = MAX - MIN) %>% 
+  quickplot(title = "Range across the year", show_legend = T, xlab = "Day of the year", ylab = "Temperature")
+
+
+melt(pivot_df[-1], id.vars = NULL) %>% 
+ggplot(aes(x = variable, y = value)) +
+  geom_boxplot(fill = "gray") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  
+  labs(title = "Boxplot for all years", x = NULL, y = NULL)
+
+DATASET %>%
+  select(Month, T_AVG) %>%
+  group_by(Month) %>% 
+  ggplot(aes(x = Month, y = T_AVG, group = Month)) +
+  geom_boxplot(fill = "gray") +
+scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb)+
+  labs(title = "Boxplot for all months across the years", x = NULL, y = NULL)
+```
+
+### How is this year compared to the rest
+
+this dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
+
+```{r avg hottness}
+ggplotly(
+  ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
+    geom_line() +
+    labs(title = "All years overlapped", x = "Day of the year", 
+         y = "Index level of returns"))
+
+
+THISYEAR <- data.frame(c(DATASET[DATASET$YEAR == 2024,]["T_MAX"]),
+                       c(DATASET[DATASET$YEAR == 2024,]["T_AVG"]),
+                       c(DATASET[DATASET$YEAR == 2024,]["T_MIN"]))
+
+ggplotly(cbind(pivot_df,
+               "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
+               "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
+               "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)) %>%
+           round(2) %>% 
+    ggplot(aes(x = DOY)) +
+    geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = 0.2) +
+    geom_line(aes(y = MEAN, color = "MEAN"), linewidth = 1) +
+    geom_line(aes(y = pivot_df$'2024', color = "AVG_Current"), linewidth = 1.3) +
+    geom_line(aes(y = MAX_pivot_df$'2024', color = "MAX_Current"), linewidth = 0.6, alpha = 1) +
+    geom_line(aes(y = MIN_pivot_df$'2024', color = "MIN_Current"), linewidth = 0.6, alpha = 1) +
+    scale_color_manual(name = "Years", values =  c(MEAN = "orange2", AVG_Current = "olivedrab", 
+                                                   MIN_Current = "lightblue", MAX_Current = "indianred")) +
+    labs(title = "Is this year hotter on average?",
+         y = NULL,      
+         x = NULL)
+)
+```
+
+## Sidequest: check accuracy
+
+```{r}
+T_SEAS <- params["alpha"] * sin(omega * temps$NUM_DAY + params["theta"])
+T_TREND <- params["a"] + params["b"] * temps$NUM_DAY
+T_BAR <- T_TREND + T_SEAS
+
+data.frame(
+  Trend = T_TREND, 
+  Seasonal = T_SEAS,
+  myfit = T_BAR,
+  oldfit = fitted(fit)) %>% 
+  quickplot(plot_engine = "plotly")
+
+
+cat("MODEL VS OU\n")
+check_acc(fitted(fit), temps_OU$OU, 10)
+
+cat("BAR VS OU\n")
+check_acc(temps$BAR, temps_OU$OU, 10)
+```
+
+## B-splines
+
+```{r, fig.width= 9, fig.width=9}
+library(splines)
+
+# Define the number of knots
+knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
+
+# Function to create a spline model and plot
+create_spline_plot <- function(knots, x, y) {
+  # Fit the spline model
+  spline_model <- lm(y ~ bs(x, knots = knots))
+  yfit <- predict(spline_model, data.frame(x = x))
+  
+  # Calculate Residual Sum of Squares (RSS)
+  rss <- sum((y - yfit)^2)
+
+  # Create the plot
+  plots <- ggplot() +
+    geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
+    geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
+    ggtitle(paste("Knots #", knots, "\nRSS:", round(rss, 2))) +
+    labs(y = "Temps", x = NULL) +
+    theme_classic()+
+    theme(plot.title = element_text(size = 10, face = "bold"))
+  
+  return(plots)
+}
+
+# Generate all the plots
+plots <- lapply(knots, create_spline_plot, x = 1:366, y = SD)
+
+# Arrange and display the plots in a 2x3 grid
+grid.arrange(grobs = plots, nrow = 3, ncol = 3)
+```
