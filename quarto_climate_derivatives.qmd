@@ -639,37 +639,29 @@ temps_OU$OU <- T_simulated
 
 DATE <- tail(temps$DAY, lookback)
 
-ggplotly(
-  temps_OU %>%
-    select(Denoised, OU, BAR) %>%
-    tail(lookback) %>%
-    round(4) %>%
-    
-    ggplot(aes(x = DATE)) +
-    geom_point(aes(y = Denoised, color = "Observed"), size = 0.5) +
-    geom_line(aes(y = OU, color = "Simulated"), linewidth = 0.8) +
-    geom_line(aes(y = BAR, color = "Model fit"), linewidth = 0.5) +
-    scale_color_manual(name = NULL, values = c(Observed = "blue", Simulated = "darkgreen", "Model fit" = "red")) +
-    labs(title = "Simulated Ornstein-Uhlenbeck Process for Temperature - Last 10 years", x = "Day", y = "Temperature")
+grid.arrange(layout_matrix = matrix(data = c(1,1,1,2), ncol = 1),
+temps_OU %>%
+  select(Denoised, OU, BAR) %>%
+  tail(lookback) %>%
+  ggplot(aes(x = DATE)) +
+  geom_point(aes(y = Denoised, color = "Observed"), size = 0.5) +
+  geom_line(aes(y = OU, color = "Simulated"), linewidth = 0.8) +
+  geom_line(aes(y = BAR, color = "Model fit"), linewidth = 0.5) +
+  scale_color_manual(name = NULL, values = c(Observed = "blue", Simulated = "darkgreen", "Model fit" = "red")) +
+  labs(title = "Simulated Ornstein-Uhlenbeck Process for Temperature - Last 10 years", x = NULL, y = "Temperature")
+,
+temps_OU %>%
+  select(Denoised, OU, BAR) %>%
+  tail(lookback) %>%
+  ggplot(aes(x = DATE)) +
+  geom_line(aes(y = BAR-OU, color = "Difference"), linewidth = 0.5) +
+  scale_color_manual(name = NULL, values = c(Difference = "mediumspringgreen")) +
+  labs(x = "Day", y = "Temperature")
 )
+
 ```
 
 # Sidequests
-
-## Sidequest: AR modeling
-
-Fit an AR(1) model if there is significant autocorrelation
-
-```{r AR1}
-ar1_model <- arima(temps$RESID, order = c(1,0,0))
-
-summary(ar1_model)
-
-ar1_fitted <- fitted(ar1_model)
-  
-quickplot(ar1_fitted, title = paste0("AR(", length(ar1_model$coef), ") Model fitted"))
-```
-
 ## Sidequest: overlap of the dataset
 
 One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
@@ -711,18 +703,18 @@ data.frame(MAX = apply(pivot_df[-1], 1, max, na.rm=TRUE),
 
 
 melt(pivot_df[-1], id.vars = NULL) %>% 
-ggplot(aes(x = variable, y = value)) +
-  geom_boxplot(fill = "gray") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  
-  labs(title = "Boxplot for all years", x = NULL, y = NULL)
+  ggplot(aes(x = variable, y = value)) +
+    geom_boxplot(fill = "gray") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  
+    labs(title = "Boxplot for all years", x = NULL, y = NULL)
 
 DATASET %>%
   select(Month, T_AVG) %>%
   group_by(Month) %>% 
   ggplot(aes(x = Month, y = T_AVG, group = Month)) +
-  geom_boxplot(fill = "gray") +
-scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb)+
-  labs(title = "Boxplot for all months across the years", x = NULL, y = NULL)
+    geom_boxplot(fill = "gray") +
+    scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
+    labs(title = "Boxplot for all months across the years", x = NULL, y = NULL)
 ```
 
 ### How is this year compared to the rest
@@ -730,34 +722,33 @@ scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb)+
 this dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
 
 ```{r avg hottness}
-ggplotly(
-  ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
-    geom_line() +
-    labs(title = "All years overlapped", x = "Day of the year", 
-         y = "Index level of returns"))
+ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
+  geom_line() +
+  labs(title = "All years overlapped", x = "Day of the year", y = "Index level of returns")
 
 
-THISYEAR <- data.frame(c(DATASET[DATASET$YEAR == 2024,]["T_MAX"]),
-                       c(DATASET[DATASET$YEAR == 2024,]["T_AVG"]),
-                       c(DATASET[DATASET$YEAR == 2024,]["T_MIN"]))
+THISYEAR <- data.frame(
+  c(DATASET[DATASET$YEAR == 2024, ]["T_MAX"]),
+  c(DATASET[DATASET$YEAR == 2024, ]["T_AVG"]),
+  c(DATASET[DATASET$YEAR == 2024, ]["T_MIN"])
+)
 
-ggplotly(cbind(pivot_df,
-               "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
-               "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
-               "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)) %>%
-           round(2) %>% 
-    ggplot(aes(x = DOY)) +
+cbind(pivot_df,
+      "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
+      "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
+      "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)
+) %>%
+  round(2) %>%
+  ggplot(aes(x = DOY)) +
     geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = 0.2) +
     geom_line(aes(y = MEAN, color = "MEAN"), linewidth = 1) +
-    geom_line(aes(y = pivot_df$'2024', color = "AVG_Current"), linewidth = 1.3) +
-    geom_line(aes(y = MAX_pivot_df$'2024', color = "MAX_Current"), linewidth = 0.6, alpha = 1) +
-    geom_line(aes(y = MIN_pivot_df$'2024', color = "MIN_Current"), linewidth = 0.6, alpha = 1) +
-    scale_color_manual(name = "Years", values =  c(MEAN = "orange2", AVG_Current = "olivedrab", 
-                                                   MIN_Current = "lightblue", MAX_Current = "indianred")) +
-    labs(title = "Is this year hotter on average?",
-         y = NULL,      
-         x = NULL)
-)
+    geom_line(aes(y = pivot_df$`2025`, color = "AVG_Current"), linewidth = 1.3) +
+    geom_line(aes(y = MAX_pivot_df$`2025`, color = "MAX_Current"), linewidth = 0.6, alpha = 1) +
+    geom_line(aes(y = MIN_pivot_df$`2025`, color = "MIN_Current"), linewidth = 0.6, alpha = 1) +
+  scale_color_manual(name = NULL, values = c(MEAN = "orange2", AVG_Current = "olivedrab", 
+                                                MIN_Current = "lightblue", MAX_Current = "indianred")) +
+  labs(title = "Is this year hotter on average?", y = NULL, x = NULL)+
+  theme(legend.position = "bottom")
 ```
 
 ## Sidequest: check accuracy
@@ -818,72 +809,14 @@ plots <- lapply(knots, create_spline_plot, x = 1:366, y = SD)
 grid.arrange(grobs = plots, nrow = 3, ncol = 3)
 ```
 
-```{r}
-beepr::beep(sound = 3)
-```
 
-
-The model combines a linear trend and sinusoidal seasonality:
-$$
-T(t)=a+bt+α sin⁡(ωt+θ)
-$$
-
-Converted to:
-
-$$
-T(t)=a+bt+a_1 + cos(ωt)+b_1 + sin(ωt) 
-$$
-
-where 
-ω=2π/365.25
-
-
-```{r}
-# Define model formula
-model_formula <- function(t, a, b, a1, b1) {
-  omega <- 2 * pi / 365.25
-  a + b * t + a1 * cos(omega * t) + b1 * sin(omega * t)
-}
-
-# Prepare data: Convert dates to days since first date
-first_date <- min(temps$DAY)
-temps$t <- as.numeric(difftime(temps$DAY, first_date, units = "days"))
-
-# Fit model using nonlinear least squares
-fit <- nls(T_AVG ~ model_formula(t, a, b, a1, b1), 
-           data = temps, 
-           start = list(a = mean(temps$T_AVG), b = 0, a1 = 0, b1 = 0))
-
-# Extract parameters
-params <- coef(fit)
-params
-
-temps$model <- predict(fit)
-temps$res <- temps$T_AVG - temps$model
-
-# Plot data and model fit
-ggplot(temps, aes(x = DAY)) +
-  geom_point(aes(y = T_AVG), alpha = 0.5) +
-  geom_line(aes(y = model), color = "red") +
-  labs(title = "Temperature Data with Fitted Model")
-
-# Residuals analysis
-ggacf(temps$res, plot = FALSE) + ggtitle("ACF of Residuals")
-ggpacf(temps$res, plot = FALSE) + ggtitle("PACF of Residuals")
-
-# Fit AR(1)
-ar_model <- arima(temps$res, order = c(1, 0, 0), include.mean = FALSE)
-gamma <- ar_model$coef[1]
-kappa <- 1 - gamma
-cat("Kappa (mean reversion speed):", round(kappa, 3))
-```
 
 ### Sidequest: predicting temperatures in the future
 Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather 
 using this model that i've built right now i want to predict the temperature une month from now and 
 ```{r}
 forecast_N <- 30
-new_t <- max(temps$t) + forecast_N  # forecast_N days after last observation
+new_t <- max(temps$NUM_DAY) + forecast_N  # forecast_N days after last observation
 predicted_T <- model_formula(new_t, params["a"], params["b"], params["a1"], params["b1"])
 cat("predicted temperature for", as.character(max(temps$DAY)+forecast_N), "=", predicted_T)
 
@@ -902,14 +835,6 @@ stochastic_part <- future_residuals$mean
 # Final prediction
 future_T <- deterministic_part + stochastic_part
 
-quickplot(data.frame(TEMPS = c(tail(temps$T_AVG, 100), future_T),
-                    DET = c(rep(NA,100), deterministic_part),
-                    STOCH = c(rep(NA,100), stochastic_part)))+
-  geom_vline(aes(xintercept = 100))
-```
-
-
-```{r}
 forecast_df <- data.frame(
   Date = future_dates,
   Temperature = future_T,
@@ -918,10 +843,10 @@ forecast_df <- data.frame(
 )
 
 ggplot() +
-  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG), alpha = 0.5) +
+  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG)) +
   geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
   geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2) +
-  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date")
+  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") 
 ```
 
 The residuals represent short-term deviations from the deterministic trend/seasonality, becoming irrelevant after `r sum(ifelse(round(stochastic_part, 4), yes = 1, 0))` days, which means that in the long run you will get a temperature entirely determined by the deterministic trend, over time, these deviations are expected to fade back to zero (the mean).
@@ -932,3 +857,10 @@ for forecasting purposes it means a couple of things: that in the short-term my 
 
 This model doesnt really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model 
 
+
+
+
+
+```{r}
+beepr::beep(sound = 3)
+```
