@@ -40,12 +40,18 @@ Sys.setlocale("LC_TIME", "English") # set output language in English
 theme_set(theme_minimal())
 knitr::opts_chunk$set(fig.align = 'center')
 
-select <- dplyr::select
+conflicted::conflicts_prefer(dpylr::select())
 ```
 
 <details>
 
 <summary>Full dependencies list, click to expand list</summary>
+
+```{r, echo=FALSE}
+dff <- sessionInfo()
+dff$R.version$version.string
+dff$platform
+```
 
 Functions loaded from main
 
@@ -96,7 +102,7 @@ $HDDn = \max(T_{ref} - T_n, 0)$
 $CDDn = \max(T_n - T_{ref}, 0)$
 
 | Option Type | Protection Against | Exercise When | Payout | Example |
-|--------------|--------------|--------------|-----------------|--------------|
+|---------------|---------------|---------------|---------------|---------------|
 | HDD call | Overly cold winters | HDD \> K | $\alpha \cdot$ (HDD - K) | Farmers |
 | HDD **put** | Overly warm winters | HDD \< K | $\alpha \cdot$ (K - HDD) | Ski resorts |
 | CDD call | Overly hot summers | CDD \> K | $\alpha \cdot$ (CDD - K) | Utilities |
