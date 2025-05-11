@@ -810,11 +810,15 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3)
 ```
 
 
-
 ### Sidequest: predicting temperatures in the future
 Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather 
 using this model that i've built right now i want to predict the temperature une month from now and 
 ```{r}
+model_formula <- function(t, a, b, a1, b1) {
+  omega <- 2 * pi / 365.25
+  a + b * t + a1 * cos(omega * t) + b1 * sin(omega * t)
+}
+
 forecast_N <- 30
 new_t <- max(temps$NUM_DAY) + forecast_N  # forecast_N days after last observation
 predicted_T <- model_formula(new_t, params["a"], params["b"], params["a1"], params["b1"])
