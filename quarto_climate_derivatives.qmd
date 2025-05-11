@@ -40,7 +40,15 @@ Sys.setlocale("LC_TIME", "English") # set output language in English
 theme_set(theme_minimal())
 knitr::opts_chunk$set(fig.align = 'center')
 
-conflicted::conflicts_prefer(dpylr::select())
+# conflicted::conflicts_prefer(dpylr::select)
+# conflicted::conflicts_prefer(dplyr::filter)
+# conflicted::conflicts_prefer(e1071::skewness)
+# conflicted::conflicts_prefer(e1071::kurtosis)
+
+select <- dplyr::select
+filter <- dplyr::filter
+skewness <- e1071::skewness
+kurtosis <- e1071::kurtosis
 ```
 
 <details>
@@ -118,13 +126,13 @@ This study utilizes temperature data obtained from the MERRA-2 (Modern-Era Retro
 
 The specific region analyzed, with an average elevation of 288.19 meters, is located at a latitude of 45.5330, and longitude of 9.1911.
 
-```{r MAP, include=FALSE}
+```{r MAP}
 #| column: screen
 library(leaflet, quietly = TRUE, warn.conflicts = FALSE)
 map_data <- data.frame(
   name = "Location",
-  lat = 45.53308333,
-  lon = 9.1911111
+  lat = 28.3688,
+  lon = -81.5614
 )
 # Create a leaflet map
 leaflet(map_data) %>%
@@ -155,14 +163,14 @@ Temperature at 2 meters refers to the air temperature measured 2 meters (approxi
 -   **Accuracy**: Because it represents the temperature most relevant to human activities and energy consumption, it is directly applicable for creating and settling weather derivatives that are based on temperature-related indices.
 
 ```{r Dataset download}
-ORIGINAL_DATASET <- read.csv("C:/Users/pietr/OneDrive/Desktop/POWER_Point_Daily_19810101_20250228_045d53N_009d19E_LST.csv", skip = 10)
+ORIGINAL_DATASET <- read.csv("DISNEY DATA.csv", skip = 10)
 
 DATASET <- ORIGINAL_DATASET %>% 
   mutate(T_MAX=remove_outliers(T2M_MAX, fill = "NA") %>% na.approx) %>% 
   mutate(T_MIN=remove_outliers(T2M_MIN, fill = "NA") %>% na.approx) %>% 
   mutate(DAY = as.Date(ORIGINAL_DATASET$DOY - 1, origin = paste0(ORIGINAL_DATASET$YEAR, "-01-01"))) %>%
   mutate(Month=month(DAY)) %>% 
-  select(c(DAY, YEAR, Month, DOY, T_MAX, T_MIN))
+  dplyr::select(DAY, YEAR, Month, DOY, T_MAX, T_MIN)
   
 
 DATASET$T_AVG <- apply(DATASET[c("T_MAX", "T_MIN")], 1, mean)
@@ -179,7 +187,7 @@ datatable(smart_round(DATASET, digits = 3))
 
 ```{r Initial Viz}
 cleandataset <- DATASET %>% 
-  select(c(T_MAX, T_MIN, T_AVG)) %>% 
+  select(T_MAX, T_MIN, T_AVG) %>% 
   xts(order.by = DATASET$DAY)
 
 desc_df(cleandataset)
@@ -212,6 +220,7 @@ lookback <- 365*10
                      values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))} %>% 
   ggplotly() 
 
+# library(gganimate)
 # animplot1 <- plot1 +
 #   labs(subtitle = "year: {frame_time}") +
 #   transition_reveal(year) + 
@@ -802,4 +811,8 @@ plots <- lapply(knots, create_spline_plot, x = 1:366, y = SD)
 
 # Arrange and display the plots in a 2x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3)
+```
+
+```{r}
+beepr::beep(sound = 3)
 ```
