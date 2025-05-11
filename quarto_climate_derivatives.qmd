@@ -39,16 +39,20 @@ source("C:/Users/pietr/OneDrive/Desktop/formula.main.R")
 Sys.setlocale("LC_TIME", "English") # set output language in English
 theme_set(theme_minimal())
 knitr::opts_chunk$set(fig.align = 'center')
+library(forecast)
+library(nlstools)
 
 # conflicted::conflicts_prefer(dpylr::select)
 # conflicted::conflicts_prefer(dplyr::filter)
 # conflicted::conflicts_prefer(e1071::skewness)
 # conflicted::conflicts_prefer(e1071::kurtosis)
+# conflicted::conflicts_prefer(plotly::layout)
 
 select <- dplyr::select
 filter <- dplyr::filter
 skewness <- e1071::skewness
 kurtosis <- e1071::kurtosis
+layout <- plotly::layout
 ```
 
 <details>
@@ -59,6 +63,7 @@ kurtosis <- e1071::kurtosis
 dff <- sessionInfo()
 dff$R.version$version.string
 dff$platform
+rm(dff)
 ```
 
 Functions loaded from main
@@ -816,3 +821,114 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3)
 ```{r}
 beepr::beep(sound = 3)
 ```
+
+
+The model combines a linear trend and sinusoidal seasonality:
+$$
+T(t)=a+bt+α sin⁡(ωt+θ)
+$$
+
+Converted to:
+
+$$
+T(t)=a+bt+a_1 + cos(ωt)+b_1 + sin(ωt) 
+$$
+
+where 
+ω=2π/365.25
+
+
+```{r}
+# Define model formula
+model_formula <- function(t, a, b, a1, b1) {
+  omega <- 2 * pi / 365.25
+  a + b * t + a1 * cos(omega * t) + b1 * sin(omega * t)
+}
+
+# Prepare data: Convert dates to days since first date
+first_date <- min(temps$DAY)
+temps$t <- as.numeric(difftime(temps$DAY, first_date, units = "days"))
+
+# Fit model using nonlinear least squares
+fit <- nls(T_AVG ~ model_formula(t, a, b, a1, b1), 
+           data = temps, 
+           start = list(a = mean(temps$T_AVG), b = 0, a1 = 0, b1 = 0))
+
+# Extract parameters
+params <- coef(fit)
+params
+
+temps$model <- predict(fit)
+temps$res <- temps$T_AVG - temps$model
+
+# Plot data and model fit
+ggplot(temps, aes(x = DAY)) +
+  geom_point(aes(y = T_AVG), alpha = 0.5) +
+  geom_line(aes(y = model), color = "red") +
+  labs(title = "Temperature Data with Fitted Model")
+
+# Residuals analysis
+ggacf(temps$res, plot = FALSE) + ggtitle("ACF of Residuals")
+ggpacf(temps$res, plot = FALSE) + ggtitle("PACF of Residuals")
+
+# Fit AR(1)
+ar_model <- arima(temps$res, order = c(1, 0, 0), include.mean = FALSE)
+gamma <- ar_model$coef[1]
+kappa <- 1 - gamma
+cat("Kappa (mean reversion speed):", round(kappa, 3))
+```
+
+### Sidequest: predicting temperatures in the future
+Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather 
+using this model that i've built right now i want to predict the temperature une month from now and 
+```{r}
+forecast_N <- 30
+new_t <- max(temps$t) + forecast_N  # forecast_N days after last observation
+predicted_T <- model_formula(new_t, params["a"], params["b"], params["a1"], params["b1"])
+cat("predicted temperature for", as.character(max(temps$DAY)+forecast_N), "=", predicted_T)
+
+arima_model <- Arima(temps$res, order = c(2, 0, 0), include.mean = FALSE)
+future_residuals <- forecast(arima_model, h = forecast_N)  # forecast_N steps ahead
+
+future_dates <- seq(max(temps$DAY), by = "day", length.out = forecast_N)
+future_t <- as.numeric(difftime(future_dates, first_date, units = "days"))
+
+# Deterministic part
+deterministic_part <- model_formula(future_t, params["a"], params["b"], params["a1"], params["b1"])
+
+# Stochastic part (residuals)
+stochastic_part <- future_residuals$mean
+
+# Final prediction
+future_T <- deterministic_part + stochastic_part
+
+quickplot(data.frame(TEMPS = c(tail(temps$T_AVG, 100), future_T),
+                    DET = c(rep(NA,100), deterministic_part),
+                    STOCH = c(rep(NA,100), stochastic_part)))+
+  geom_vline(aes(xintercept = 100))
+```
+
+
+```{r}
+forecast_df <- data.frame(
+  Date = future_dates,
+  Temperature = future_T,
+  Lower = future_T - 1.96 * future_residuals$mean,  # 95% CI
+  Upper = future_T + 1.96 * future_residuals$mean
+)
+
+ggplot() +
+  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG), alpha = 0.5) +
+  geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
+  geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2) +
+  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date")
+```
+
+The residuals represent short-term deviations from the deterministic trend/seasonality, becoming irrelevant after `r sum(ifelse(round(stochastic_part, 4), yes = 1, 0))` days, which means that in the long run you will get a temperature entirely determined by the deterministic trend, over time, these deviations are expected to fade back to zero (the mean).
+      
+Forecast implications:
+
+for forecasting purposes it means a couple of things: that in the short-term my Residuals adjust for recent "shocks" (e.g., a heatwave/cold snap), but in the long-term the forecast relies entirely on the deterministic component (trend + seasonality).
+
+This model doesnt really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model 
+
