@@ -13,6 +13,7 @@ format:
     code-block-bg: true
     # monofont: sans
 toc: true
+toc-depth: 2
 self-contained: true
 number-sections: true
 lang: en
@@ -32,7 +33,7 @@ project:
 
 # Weather Derivatives Temperature Options
 
-```{r}
+```{r setup}
 #| title: setup
 #| include: false
 source("C:/Users/pietr/OneDrive/Desktop/formula.main.R")
@@ -59,7 +60,7 @@ layout <- plotly::layout
 
 <summary>Full dependencies list, click to expand list</summary>
 
-```{r, echo=FALSE}
+```{r session_info, echo=FALSE}
 dff <- sessionInfo()
 dff$R.version$version.string
 dff$platform
@@ -85,7 +86,7 @@ Functions defined in this document
 required_functions(file)
 ```
 
-```{r}
+```{r time info}
 cat("time of creation", "\n")
 print(file.info(file)$ctime, "\n")
 cat("LAST MODIFICATION", "\n")
@@ -181,9 +182,12 @@ DATASET <- ORIGINAL_DATASET %>%
 DATASET$T_AVG <- apply(DATASET[c("T_MAX", "T_MIN")], 1, mean)
 
 ORIGINAL_DATASET[ifelse(find_outliers(ORIGINAL_DATASET$T2M_MAX)==0,FALSE,TRUE),] %>% 
-  gt() %>% 
-  opt_stylize(5) %>% 
-  tab_header(title = "Days where the sensor malfunctioned", subtitle = "identified by remove outliers")
+  group_by(YEAR) %>% 
+  summarise("Days" = length(DOY)) %>% 
+  ggplot( aes(x = YEAR, y = Days))+
+    geom_bar(stat = "identity") + 
+    labs(x= NULL, y =NULL, title = "Days where the sensor malfunctioned", 
+        subtitle = "Identified by remove outliers")
 
 datatable(smart_round(DATASET, digits = 3))
 ```
@@ -213,7 +217,7 @@ However this is not that useful so let me zoom in on the last third of the datab
 NDAYS <- nrow(cleandataset)
 lookback <- 365*10
 
-{tail(cleandataset, lookback) %>% 
+tail(cleandataset, lookback) %>% 
   as.data.frame() %>% 
   mutate(year = index(tail(cleandataset, lookback))) %>% 
   ggplot(aes(x = year))+
@@ -222,8 +226,7 @@ lookback <- 365*10
   geom_line(aes(y=T_AVG, color = "T_AVG"))+
   labs(title = "Last 10 years of recorded data", y="Temperature", x=NULL)+
   scale_color_manual(name = "Temps", 
-                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))} %>% 
-  ggplotly() 
+                    values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))
 
 # library(gganimate)
 # animplot1 <- plot1 +
@@ -325,7 +328,7 @@ DATASET_seas %>%
 
 ## Long term trends
 
-```{r}
+```{r LT-trends}
 SMA(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term trend")
 runSD(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term Standard deviation")
 ```
@@ -459,7 +462,7 @@ temps$Trend <- temps$Trend %>% na.fill(params["a"] + params["b"] * 1:lookback)
 
 ## Visualization of results
 
-```{r FOURIER VIZ, fig.width=8}
+```{r FOURIER VIZ, fig.width = 8, fig.height = 7}
 # plot denoised 
 ggplot(tail(temps, lookback), aes(x=DAY))+
   geom_point(aes(y = T_AVG, color = "Average"), size = 1)+
@@ -639,7 +642,7 @@ temps_OU$OU <- T_simulated
 
 DATE <- tail(temps$DAY, lookback)
 
-grid.arrange(layout_matrix = matrix(data = c(1,1,1,2), ncol = 1),
+grid.arrange(layout_matrix = matrix(data = c(1,1,1,2), ncol = 1), left = "Temperature",
 temps_OU %>%
   select(Denoised, OU, BAR) %>%
   tail(lookback) %>%
@@ -648,7 +651,11 @@ temps_OU %>%
   geom_line(aes(y = OU, color = "Simulated"), linewidth = 0.8) +
   geom_line(aes(y = BAR, color = "Model fit"), linewidth = 0.5) +
   scale_color_manual(name = NULL, values = c(Observed = "blue", Simulated = "darkgreen", "Model fit" = "red")) +
-  labs(title = "Simulated Ornstein-Uhlenbeck Process for Temperature - Last 10 years", x = NULL, y = "Temperature")
+  labs(title = "Simulated Ornstein-Uhlenbeck Process for Temperature - Last 10 years", x = NULL, y = NULL)+
+  theme(axis)+ 
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
 ,
 temps_OU %>%
   select(Denoised, OU, BAR) %>%
@@ -656,12 +663,13 @@ temps_OU %>%
   ggplot(aes(x = DATE)) +
   geom_line(aes(y = BAR-OU, color = "Difference"), linewidth = 0.5) +
   scale_color_manual(name = NULL, values = c(Difference = "mediumspringgreen")) +
-  labs(x = "Day", y = "Temperature")
+  labs(x = "Day", y = NULL)
 )
 
 ```
 
 # Sidequests
+
 ## Sidequest: overlap of the dataset
 
 One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
@@ -751,69 +759,12 @@ cbind(pivot_df,
   theme(legend.position = "bottom")
 ```
 
-## Sidequest: check accuracy
+## Sidequest: predicting temperatures in the future
+
+Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature une month from now and
 
 ```{r}
-T_SEAS <- params["alpha"] * sin(omega * temps$NUM_DAY + params["theta"])
-T_TREND <- params["a"] + params["b"] * temps$NUM_DAY
-T_BAR <- T_TREND + T_SEAS
-
-data.frame(
-  Trend = T_TREND, 
-  Seasonal = T_SEAS,
-  myfit = T_BAR,
-  oldfit = fitted(fit)) %>% 
-  quickplot(plot_engine = "plotly")
-
-
-cat("MODEL VS OU\n")
-check_acc(fitted(fit), temps_OU$OU, 10)
-
-cat("BAR VS OU\n")
-check_acc(temps$BAR, temps_OU$OU, 10)
-```
-
-## B-splines
-
-```{r, fig.width= 9, fig.width=9}
-library(splines)
-
-# Define the number of knots
-knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
-
-# Function to create a spline model and plot
-create_spline_plot <- function(knots, x, y) {
-  # Fit the spline model
-  spline_model <- lm(y ~ bs(x, knots = knots))
-  yfit <- predict(spline_model, data.frame(x = x))
-  
-  # Calculate Residual Sum of Squares (RSS)
-  rss <- sum((y - yfit)^2)
-
-  # Create the plot
-  plots <- ggplot() +
-    geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
-    geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
-    ggtitle(paste("Knots #", knots, "\nRSS:", round(rss, 2))) +
-    labs(y = "Temps", x = NULL) +
-    theme_classic()+
-    theme(plot.title = element_text(size = 10, face = "bold"))
-  
-  return(plots)
-}
-
-# Generate all the plots
-plots <- lapply(knots, create_spline_plot, x = 1:366, y = SD)
-
-# Arrange and display the plots in a 2x3 grid
-grid.arrange(grobs = plots, nrow = 3, ncol = 3)
-```
-
-
-### Sidequest: predicting temperatures in the future
-Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather 
-using this model that i've built right now i want to predict the temperature une month from now and 
-```{r}
+#| warnings: False
 model_formula <- function(t, a, b, a1, b1) {
   omega <- 2 * pi / 365.25
   a + b * t + a1 * cos(omega * t) + b1 * sin(omega * t)
@@ -821,17 +772,18 @@ model_formula <- function(t, a, b, a1, b1) {
 
 forecast_N <- 30
 new_t <- max(temps$NUM_DAY) + forecast_N  # forecast_N days after last observation
-predicted_T <- model_formula(new_t, params["a"], params["b"], params["a1"], params["b1"])
+predicted_T <- model_formula(new_t, params["a"], params["b"], params["alpha"], params["theta"])
 cat("predicted temperature for", as.character(max(temps$DAY)+forecast_N), "=", predicted_T)
 
-arima_model <- Arima(temps$res, order = c(2, 0, 0), include.mean = FALSE)
+arima_model <- Arima(temps$RESID, order = c(2, 0, 0), include.mean = FALSE)
 future_residuals <- forecast(arima_model, h = forecast_N)  # forecast_N steps ahead
 
+first_date <- min(temps$DAY)
 future_dates <- seq(max(temps$DAY), by = "day", length.out = forecast_N)
 future_t <- as.numeric(difftime(future_dates, first_date, units = "days"))
 
 # Deterministic part
-deterministic_part <- model_formula(future_t, params["a"], params["b"], params["a1"], params["b1"])
+deterministic_part <- model_formula(future_t, params["a"], params["b"], params["alpha"], params["theta"])
 
 # Stochastic part (residuals)
 stochastic_part <- future_residuals$mean
@@ -854,17 +806,470 @@ ggplot() +
 ```
 
 The residuals represent short-term deviations from the deterministic trend/seasonality, becoming irrelevant after `r sum(ifelse(round(stochastic_part, 4), yes = 1, 0))` days, which means that in the long run you will get a temperature entirely determined by the deterministic trend, over time, these deviations are expected to fade back to zero (the mean).
-      
+
 Forecast implications:
 
 for forecasting purposes it means a couple of things: that in the short-term my Residuals adjust for recent "shocks" (e.g., a heatwave/cold snap), but in the long-term the forecast relies entirely on the deterministic component (trend + seasonality).
 
-This model doesnt really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model 
+This model doesnt really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model
+
+# Modeling volatility
+
+## Polynomial Regression:
+
+Fit polynomial curves to model the relationship between day-of-year and volatility.
+
+```{r}
+# Create a dataframe with temperature and date components
+temp_t <- data.frame(
+  Date = temps$DAY,  # Assuming the index is a proper Date object
+  T = temps$T_AVG,
+  day = yday(temps$DAY),
+  month = month(temps$DAY)
+)
+
+# 2. Calculate monthly volatility statistics
+vol1 <- temps %>%
+  group_by(YEAR, Month) %>%
+  summarise(
+    mean_temp = mean(T_AVG, na.rm = TRUE),
+    std_temp = sd(T_AVG, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# 5. Volatility Analysis
+    vol <- temps %>%
+      select(DAY, T_AVG) %>%
+      mutate(day = yday(DAY),
+            month = month(DAY)) %>%
+      group_by(day) %>%
+      summarise(mean = mean(T_AVG, na.rm = TRUE),
+                std = sd(T_AVG, na.rm = TRUE))
+```
+
+## B-splines
+
+Flexible non-parametric method that fits piecewise ials (splines) at different intervals (knots).
+
+Avoids overfitting by controlling the number of knots.
+
+AIC (Akaike Information Criterion): Helps select the best model by balancing goodness-of-fit and complexity (lower AIC preferred).
+
+```{r B-splines, fig.width= 9}
+library(splines)
+x <- 1:366
+y <- SD
+
+# Define the number of knots
+knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
+x <- 1:366
+# Function to create a spline model and plot
+create_spline_plot <- function(knots, x, y) {
+  # Fit the spline model
+  spline_model <- lm(y ~ bs(x, knots = knots))
+  yfit <- predict(spline_model, data.frame(x = x))
+  
+  # Calculate Residual Sum of Squares (RSS)
+  rss <- sum((y - yfit)^2)
+  aic <- length(x) * log(rss / length(x)) + 2 * knots
+
+  # Create the plot
+  plots <- ggplot() +
+    geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
+    geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
+    ggtitle(paste("Knots #", knots, "\nRSS:", round(rss, 2), "AIC:", round(aic,2))) +
+    labs(x = NULL, y = NULL)
+    theme_classic()+
+    theme(plot.title = element_text(size = 10, face = "bold"))
+  
+  return(plots)
+}
+
+# Generate all the plots
+plots <- lapply(knots, create_spline_plot, x = x, y = SD)
+
+# Arrange and display the plots in a 2x3 grid
+grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different B-splines models")
+```
+
+## Polynomial models to fit volatility
+
+```{r polynomial, fig.width= 9, fig.width=9}
+# Function to create polynomial model and plot
+x <- 1:366
+create_poly_plot <- function(degree, x, y) {
+  # Fit polynomial model
+  model <- lm(y ~ poly(x, degree, raw = TRUE))
+  yfit <- predict(model, data.frame(x = x))
+  
+  # Calculate metrics
+  rss <- sum(resid(model)^2)
+  aic <- AIC(model)
+  
+  # Create plot
+  ggplot() +
+    geom_point(aes(x, y), color = '#00962B', size = 1) +
+    geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
+    ggtitle(paste("Degree:", degree, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
+    labs(y = NULL, x = NULL)+
+    theme_classic()+
+    theme(plot.title = element_text(size = 10, face = "bold"))
+  }
+
+# Generate plots for degrees 1 through 9
+degrees <- 1:9
+plots <- lapply(degrees, create_poly_plot, x = x, y = SD)
+
+# Arrange in 3x3 grid
+grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different polynomial models")
+```
+
+## Fourier transforms
+
+```{r fourier}
+fourier_series <- function(x, n_terms, period = 365.25) {
+  omega <- 2 * pi / period
+  terms <- list(a0 = 1)
+  
+  for(i in 1:n_terms) {
+    terms[[paste0("a", i)]] <- cos(i * omega * x)
+    terms[[paste0("b", i)]] <- sin(i * omega * x)
+  }
+  return(terms)
+}
+
+# Fit 6th order Fourier series
+fourier_terms <- fourier_series(1:366, n_terms = 3)
+model_data <- data.frame(y = SD, fourier_terms)
+
+fourier_fit <- lm(y ~ ., data = model_data)
+vol$fourier <- predict(fourier_fit, newdata = model_data)
+
+# Plot Fourier fit
+ggplot(vol, aes(x = day)) +
+  geom_line(aes(y = std), color = "orange") +
+  geom_line(aes(y = fourier), color = "black") +
+  labs(y = "Std Dev (deg C)", title = "Fourier Series Fit") +
+  theme_minimal()
+```
+
+```{r}
+# 3. Print long-term volatility metrics
+cat("Trend or long term volatility is easy: ~", round(mean(vol1$std_temp, na.rm = TRUE), 3), "\n")
+cat("Gamma is:", round(sd(vol1$std_temp, na.rm = TRUE), 3), "\n")
+
+# 4. Fit AR(1) model for mean reversion rate
+ar_model <- arima(vol1$std_temp, order = c(1, 0, 0), include.mean = FALSE)
+coef <- ar_model$coef
+residuals <- ar_model$residuals
+
+cat("Rate of mean reversion of volatility process is:", round(coef["ar1"], 3), "\n")
+print(summary(ar_model))
+```
+
+### IDK
+
+This code models temperature data using a linear trend plus seasonal component, then analyzes the residuals.
+
+The model combines:
+
+-   A linear trend ($a+bx$)
+
+-   A seasonal sine wave ( $\alpha sin(\omega x + \theta)$), where:
+
+$\alpha$ = amplitude (how strong the seasonality is)
+
+$\theta$ = phase shift (when peaks/troughs occur)
+
+$\omega$ = fixed frequency (\$2π/365.25\$ to match yearly cycles)
+
+Model Fitting: Uses nlsLM() from the minpack.lm package for Levenberg-Marquardt fitting
+
+-   Uses nonlinear least-squares (**`nlsLM`**) to fit:
+
+    -   $a$ = intercept (baseline temperature)
+
+    -   $b$ = slope (long-term warming/cooling trend)
+
+    -   $a_1$, $b_1$ = sine/cosine coefficients (combined into $\alpha$ and $\theta$)
+
+```{r}
+library(minpack.lm)  # For Levenberg-Marquardt nonlinear least squares
+
+# Define the model functions
+model <- function(x, params) {
+  a <- params[1]
+  b <- params[2]
+  a1 <- params[3]
+  b1 <- params[4]
+  
+  omega <- 2*pi/365.25
+  theta <- atan2(a1, b1)
+  alpha <- sqrt(a1^2 + b1^2)
+  
+  cat("Parameters:\n")
+  cat(sprintf("     a %0.3f\n", a))
+  cat(sprintf("     b %0.3f\n", b))
+  cat(sprintf(" alpha %0.3f\n", alpha))
+  cat(sprintf(" theta %0.3f\n", theta))
+  
+  y_pred <- a + b*x + alpha*sin(omega*x + theta)
+  return(y_pred)
+}
+
+model_fit <- function(x, a, b, a1, b1) {
+  omega <- 2*pi/365.25
+  y_pred <- a + b*x + a1*cos(omega*x) + b1*sin(omega*x)
+  return(y_pred)
+}
+
+# Prepare the data
+first_ord <- as.numeric(temp_t$Date[1])
+x_data <- as.numeric(temp_t$Date) - first_ord
+y_data <- temps$T_AVG
+
+# Fit the model using nonlinear least squares
+fit <- nlsLM(
+  y_data ~ model_fit(x_data, a, b, a1, b1),
+  start = list(a = mean(y_data), b = 0, a1 = 0, b1 = 0),
+  control = nls.lm.control(maxiter = 100)
+)
+
+# Extract parameters
+params_all <- coef(fit)
+temps$model <- model(x_data, params_all)
+temp_t$res <- temps$T_AVG - temps$model
+
+# Plot the last 2000 observations
+temps %>%
+  tail(2000) %>%
+  ggplot(aes(x = DAY)) +
+    geom_point(aes(y = T_AVG, color = "Observed"), size = 2) +
+    geom_line(aes(y = model, color = "Model"), linewidth = 1) +
+    scale_color_manual(values = c("Observed" = "blue", "Model" = "darkorange")) +
+    labs(y = "Temperature", title = "Temperature Model Fit") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+```
+
+This model:
+
+1.  **Detects long-term trends** (climate change via $b$)
+
+2.  **Quantifies seasonality** (summer/winter differences via $\alpha$)
+
+3.  **Identifies anomalies** (via residuals **`res`**), useful for:
+
+    -   Weather derivative pricing
+
+    -   Volatility analysis (like your earlier code) \# Montecarlo simulations
+
+```{r}
+a <- params[1]
+b <- params[2]
+theta <- atan2(params[3], params[4])
+alpha <- sqrt(params[3]^2 + params[4]^2)
+kappa <- as.double(kappa)
 
 
+# 1. Temperature Model Functions
+T_model <- function(x, a, b, alpha, theta) {
+  omega <- 2 * pi / 365.25
+  a + b * x + alpha * sin(omega * x + theta)
+}
+dT_model <- function(x, a, b, alpha, theta) {
+  omega <- 2 * pi / 365.25
+  b + alpha * omega * cos(omega * x + theta)
+}
 
+# 2. Prepare Data (assuming temp_t is your dataframe)
+if (inherits(temps$DAY, "Date")) {
+  first_ord <- as.numeric(temps$DAY[1])
+  temp_t$ordinal <- as.numeric(temps$DAY)
+} else {
+  temp_t$Date <- as.Date(temps$DAY)
+  first_ord <- as.numeric(temps$DAY[1])
+  temp_t$ordinal <- as.numeric(temps$DAY)
+}
+
+# 3. Apply Model with Given Parameters
+Tbar_params <- list(a = a, b = b, alpha = alpha, theta = theta)
+temps$model_fit <- T_model(
+  temp_t$ordinal - first_ord,
+  Tbar_params$a,
+  Tbar_params$b,
+  Tbar_params$alpha,
+  Tbar_params$theta
+)
+
+# 4. Plot Results
+temps %>%
+  tail(2000) %>%
+  ggplot(aes(x = DAY)) +
+    geom_point(aes(y = T_AVG, color = "Observed"), shape = 1, size = 2) +
+    geom_line(aes(y = model_fit, color = "Model Fit"), linetype = "dashed") +
+    scale_color_manual(values = c("Observed" = "black", "Model Fit" = "red")) +
+    labs(title = "Temperature Model Fit", y = "Temperature (°C)") +
+    theme_minimal()
+
+# 6. Spline Fit for Volatility
+spline_fit <- function(knots, x, y) {
+  x_new <- seq(0, 1, length.out = knots + 2)[2:(knots + 1)]
+  knots_pos <- quantile(x, probs = x_new)
+  bspline <- lm(y ~ bs(x, knots = knots_pos, degree = 3))
+  predict(bspline, newdata = data.frame(x = x))
+}
+
+volatility <- spline_fit(15, vol$day, vol$std)
+
+# Plot Volatility
+ggplot(vol, aes(x = day)) +
+  geom_point(aes(y = std, color = "Observed Volatility"), shape = 8) +
+  geom_line(aes(y = volatility, color = "Spline Fit"), linewidth = 1) +
+  scale_color_manual(
+    values = c("Observed Volatility" = "blue", "Spline Fit" = "black")
+  ) +
+  labs(
+    title = "Temperature Volatility by Day of Year",
+    y = "Std Dev (°C)",
+    x = "Day of Year"
+  ) +
+  theme_minimal()
+
+# 7. Monte Carlo Simulation Functions
+euler_step <- function(row, kappa, M) {
+  T_i <- ifelse(is.na(row$Tbar_shift), row$Tbar, row$Tbar_shift)
+  T_det <- T_i + row$dTbar
+  T_mrev <- kappa * (row$Tbar - T_i)
+  sigma <- row$vol * rnorm(M)
+  T_det + T_mrev + sigma
+}
+
+monte_carlo_temp <- function(
+  trading_dates,
+  Tbar_params,
+  vol_model,
+  first_ord,
+  M = 1,
+  kappa = 0.2430516
+) {
+  # Convert dates to numeric if needed
+  if (inherits(trading_dates, "Date")) {
+    trading_numeric <- as.numeric(trading_dates)
+  } else {
+    trading_dates <- as.Date(trading_dates)
+    trading_numeric <- as.numeric(trading_dates)
+  }
+
+  # Calculate Tbar and dTbar
+  x_vals <- trading_numeric - first_ord
+  Tbars <- T_model(
+    x_vals,
+    Tbar_params$a,
+    Tbar_params$b,
+    Tbar_params$alpha,
+    Tbar_params$theta
+  )
+  dTbars <- dT_model(
+    x_vals,
+    Tbar_params$a,
+    Tbar_params$b,
+    Tbar_params$alpha,
+    Tbar_params$theta
+  )
+
+  # Create simulation dataframe
+  mc_temps <- data.frame(
+    Date = trading_dates,
+    Tbar = Tbars,
+    dTbar = dTbars,
+    day = yday(trading_dates),
+    vol = vol_model[yday(trading_dates)] # Directly add volatility
+  )
+
+  # Add lagged Tbar
+  mc_temps$Tbar_shift <- dplyr::lag(mc_temps$Tbar)
+
+  # Run simulations - modified apply call
+  simulations <- sapply(1:nrow(mc_temps), function(i) {
+    row <- mc_temps[i, ]
+    euler_step(row, kappa, M)
+  })
+
+  # Transpose and format results
+  simulations <- t(simulations)
+  colnames(simulations) <- paste0("Sim", 1:M)
+
+  list(
+    mc_temps = mc_temps,
+    mc_sims = cbind(Date = trading_dates, as.data.frame(simulations))
+  )
+}
+
+# 8. Run Simulation
+trading_dates <- seq(as.Date("2022-09-01"), as.Date("2025-08-31"), by = "day")
+sim_results <- monte_carlo_temp(
+  trading_dates,
+  Tbar_params,
+  volatility,
+  first_ord,
+  M = 5
+)
+
+# 9. Plot Simulation Results
+sim_results$mc_sims %>%
+  pivot_longer(-Date, names_to = "Simulation", values_to = "Temperature") %>%
+  ggplot(aes(x = Date, y = Temperature, color = Simulation)) +
+  geom_point(alpha = 0.7) +
+  labs(title = "Monte Carlo Temperature Simulations", y = "Temperature (°C)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+# Set number of simulations
+no_sims <- 100000
+
+# Define winter and summer dates (Southern Hemisphere)
+trading_dates_winter <- as.Date("2025-10-01")
+trading_dates_summer <- as.Date("2025-04-01")
+
+# Run simulations
+sim_results_winter <- monte_carlo_temp(trading_dates_winter, Tbar_params, volatility, first_ord, M = no_sims)
+sim_results_summer <- monte_carlo_temp(trading_dates_summer, Tbar_params, volatility, first_ord, M = no_sims)
+
+
+# Extract results
+mc_sims_winter <- sim_results_winter$mc_sims %>% select(-Date)
+mc_sims_summer <- sim_results_summer$mc_sims %>% select(-Date)
+
+Tbar_summer <- sim_results_summer$mc_temps$Tbar[1]
+Tbar_winter <- sim_results_winter$mc_temps$Tbar[1]
+
+# Create combined data frame for plotting
+plot_data <- bind_rows(
+  data.frame(Temperature = unlist(mc_sims_summer), Season = "Summer"),
+  data.frame(Temperature = unlist(mc_sims_winter), Season = "Winter")
+)
+
+# Create the plot
+ggplot(plot_data, aes(x = Temperature, fill = Season)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 50) +
+  geom_vline(aes(xintercept = Tbar_winter), color = "darkblue",
+              linewidth = 1.5, linetype = "solid") +
+  geom_vline(aes(xintercept = Tbar_summer), color = "darkorange",
+              linewidth = 1.5, linetype = "solid") +
+  scale_fill_manual(values = c("Summer" = "orange", "Winter" = "blue")) +
+  labs(title = "Winter vs Summer Temperature MC Sims",
+        x = "Temperature (°C)", 
+        y = "Frequency") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
 
 
 ```{r}
-beepr::beep(sound = 3)
+#| include: False
+beepr::beep(sound = 4)
 ```
+
