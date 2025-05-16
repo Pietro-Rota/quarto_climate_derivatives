@@ -1,7 +1,6 @@
 ---
 title: "Temperature data option calculation"
 date-modified: "`r Sys.Date()`"
-editor: source
 format:
   html: 
     code-tools: true
@@ -70,7 +69,7 @@ rm(dff)
 Functions loaded from main
 
 ```{r functions_loaded, echo=FALSE}
-file <- "C:/Users/pietr/OneDrive/Desktop/temp data.qmd"
+file <- "C:\\Users\\pietr\\OneDrive\\Desktop\\angolo in alto a destra\\quarto_climate_derivatives\\quarto_climate_derivatives.qmd"
 functions_loaded(file)
 ```
 
@@ -469,7 +468,7 @@ ggplot(tail(temps, lookback), aes(x=DAY))+
   geom_point(aes(y = Denoised, color = "Denoised"), size = 1)+
   scale_color_manual(name=NULL, values = c(Average = "royalblue", Denoised = "#ffcc00"))+
   labs(title = "Average temperature", x = "Date", y = "Temperature", 
-       subtitle = "Before and after the gaussian convolution filter")
+      subtitle = "Before and after the gaussian convolution filter")
 
 temps_xts <- temps %>%
   select(T_AVG, Denoised, TREND, SEAS, RESID) %>%
@@ -478,21 +477,21 @@ temps_xts <- temps %>%
 
 # Plot seasonal decomposition from Avg to residuals
 grid.arrange(nrow=5, top = paste0("Classical decomposition - last ",  lookback/365, " years"), 
-             
-             temps_xts$T_AVG %>% 
-             quickplot(subtitle = "Average Temperature", show_legend = F, xlab = NULL, ylab = "Temps"),
+            
+            temps_xts$T_AVG %>% 
+            quickplot(subtitle = "Average Temperature", show_legend = F, xlab = NULL, ylab = "Temps"),
 
-             temps_xts$Denoised %>% 
-             quickplot(subtitle = "Denoised", show_legend = F, xlab = NULL, ylab = "Temps"),
+            temps_xts$Denoised %>% 
+            quickplot(subtitle = "Denoised", show_legend = F, xlab = NULL, ylab = "Temps"),
 
-             temps_xts$TREND %>% 
-             quickplot(subtitle = "Trend", show_legend = F, xlab = NULL, ylab = "Temps"),
+            temps_xts$TREND %>% 
+            quickplot(subtitle = "Trend", show_legend = F, xlab = NULL, ylab = "Temps"),
 
-             temps_xts$SEAS %>% 
-             quickplot(subtitle = "Seasonal", show_legend = F, xlab = NULL, ylab = "Temps"), 
-             
-             temps_xts$RESID %>% 
-             quickplot(subtitle = "Residuals", show_legend = F, xlab = NULL, ylab = "Temps"))
+            temps_xts$SEAS %>% 
+            quickplot(subtitle = "Seasonal", show_legend = F, xlab = NULL, ylab = "Temps"), 
+            
+            temps_xts$RESID %>% 
+            quickplot(subtitle = "Residuals", show_legend = F, xlab = NULL, ylab = "Temps"))
 
 # Plot original vs. fitted data
 ggplot(temps, aes(x = DAY)) +
@@ -578,8 +577,8 @@ ggplot(temps, aes(x = RESID)) +
                 color = "red", linewidth = 1.2) +
   # geom_vline(xintercept = skewness(temps$RESID)[1], linetype = "dashed", linewidth=1, color = "darkred")+
   labs(title = "Histogram of Residuals with Normal Curve", x = "Residuals", y = "Density", 
-       # subtitle = "Vertical line is kurtosis"
-       )
+        # subtitle = "Vertical line is kurtosis"
+        )
 ```
 
 # Ornstein-Uhlenbeck (OU) process
@@ -647,10 +646,9 @@ temps_OU %>%
   select(Denoised, OU, BAR) %>%
   tail(lookback) %>%
   ggplot(aes(x = DATE)) +
-  geom_point(aes(y = Denoised, color = "Observed"), size = 0.5) +
+  geom_point(aes(y = Denoised, color = "Denoised"), size = 0.5) +
   geom_line(aes(y = OU, color = "Simulated"), linewidth = 0.8) +
-  geom_line(aes(y = BAR, color = "Model fit"), linewidth = 0.5) +
-  scale_color_manual(name = NULL, values = c(Observed = "blue", Simulated = "darkgreen", "Model fit" = "red")) +
+  scale_color_manual(name = NULL, values = c(Denoised = "#ffcc00", Simulated = "darkgreen")) +
   labs(title = "Simulated Ornstein-Uhlenbeck Process for Temperature - Last 10 years", x = NULL, y = NULL)+
   theme(axis)+ 
   theme(axis.title.x = element_blank(),
@@ -661,157 +659,11 @@ temps_OU %>%
   select(Denoised, OU, BAR) %>%
   tail(lookback) %>%
   ggplot(aes(x = DATE)) +
-  geom_line(aes(y = BAR-OU, color = "Difference"), linewidth = 0.5) +
+  geom_line(aes(y = Denoised-OU, color = "Difference"), linewidth = 0.5) +
   scale_color_manual(name = NULL, values = c(Difference = "mediumspringgreen")) +
   labs(x = "Day", y = NULL)
 )
-
 ```
-
-# Sidequests
-
-## Sidequest: overlap of the dataset
-
-One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
-
-```{r each year overlapped}
-pivot_df <- DATASET %>%
-  select(DOY, YEAR, T_AVG) %>%
-  pivot_wider(names_from = YEAR, values_from = T_AVG)
-
-
-MAX_pivot_df <- DATASET %>%
-  select(DOY, YEAR, T_MAX) %>%
-  pivot_wider(names_from = YEAR, values_from = T_MAX)
-
-MIN_pivot_df <- DATASET %>%
-  select(DOY, YEAR, T_MIN) %>%
-  pivot_wider(names_from = YEAR, values_from = T_MIN)
-
-
-MEAN <- apply(pivot_df[-1], 1, mean, na.rm=TRUE)
-MEDIAN <- apply(pivot_df[-1], 1, median, na.rm=TRUE)
-IQR <- apply(pivot_df[-1], 1, IQR, na.rm=TRUE)
-SD <- apply(pivot_df[-1], 1, sd, na.rm=TRUE)
-
-data.frame(MEAN = MEAN,
-           MEDIAN = MEDIAN) %>% 
-  quickplot(title = "Mean and median across the year", xlab = "Day of the year", ylab = "Temperature")
-
-data.frame(IQR = SMA(IQR, n = 7),
-           SD = SD) %>% 
-  quickplot(title = "Standard deviation and Inter-quartile-range across the year",
-            subtitle = "IQR MA(7)", xlab = "Day of the year", ylab = "Temperature")
-
-data.frame(MAX = apply(pivot_df[-1], 1, max, na.rm=TRUE), 
-           MIN = apply(pivot_df[-1], 1, min, na.rm=TRUE)) %>%
-  mutate(AVG = (MAX + MIN)/2) %>% 
-  mutate(RANGE = MAX - MIN) %>% 
-  quickplot(title = "Range across the year", show_legend = T, xlab = "Day of the year", ylab = "Temperature")
-
-
-melt(pivot_df[-1], id.vars = NULL) %>% 
-  ggplot(aes(x = variable, y = value)) +
-    geom_boxplot(fill = "gray") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  
-    labs(title = "Boxplot for all years", x = NULL, y = NULL)
-
-DATASET %>%
-  select(Month, T_AVG) %>%
-  group_by(Month) %>% 
-  ggplot(aes(x = Month, y = T_AVG, group = Month)) +
-    geom_boxplot(fill = "gray") +
-    scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
-    labs(title = "Boxplot for all months across the years", x = NULL, y = NULL)
-```
-
-### How is this year compared to the rest
-
-this dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
-
-```{r avg hottness}
-ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
-  geom_line() +
-  labs(title = "All years overlapped", x = "Day of the year", y = "Index level of returns")
-
-
-THISYEAR <- data.frame(
-  c(DATASET[DATASET$YEAR == 2024, ]["T_MAX"]),
-  c(DATASET[DATASET$YEAR == 2024, ]["T_AVG"]),
-  c(DATASET[DATASET$YEAR == 2024, ]["T_MIN"])
-)
-
-cbind(pivot_df,
-      "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
-      "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
-      "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)
-) %>%
-  round(2) %>%
-  ggplot(aes(x = DOY)) +
-    geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = 0.2) +
-    geom_line(aes(y = MEAN, color = "MEAN"), linewidth = 1) +
-    geom_line(aes(y = pivot_df$`2025`, color = "AVG_Current"), linewidth = 1.3) +
-    geom_line(aes(y = MAX_pivot_df$`2025`, color = "MAX_Current"), linewidth = 0.6, alpha = 1) +
-    geom_line(aes(y = MIN_pivot_df$`2025`, color = "MIN_Current"), linewidth = 0.6, alpha = 1) +
-  scale_color_manual(name = NULL, values = c(MEAN = "orange2", AVG_Current = "olivedrab", 
-                                                MIN_Current = "lightblue", MAX_Current = "indianred")) +
-  labs(title = "Is this year hotter on average?", y = NULL, x = NULL)+
-  theme(legend.position = "bottom")
-```
-
-## Sidequest: predicting temperatures in the future
-
-Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature une month from now and
-
-```{r}
-#| warnings: False
-model_formula <- function(t, a, b, a1, b1) {
-  omega <- 2 * pi / 365.25
-  a + b * t + a1 * cos(omega * t) + b1 * sin(omega * t)
-}
-
-forecast_N <- 30
-new_t <- max(temps$NUM_DAY) + forecast_N  # forecast_N days after last observation
-predicted_T <- model_formula(new_t, params["a"], params["b"], params["alpha"], params["theta"])
-cat("predicted temperature for", as.character(max(temps$DAY)+forecast_N), "=", predicted_T)
-
-arima_model <- Arima(temps$RESID, order = c(2, 0, 0), include.mean = FALSE)
-future_residuals <- forecast(arima_model, h = forecast_N)  # forecast_N steps ahead
-
-first_date <- min(temps$DAY)
-future_dates <- seq(max(temps$DAY), by = "day", length.out = forecast_N)
-future_t <- as.numeric(difftime(future_dates, first_date, units = "days"))
-
-# Deterministic part
-deterministic_part <- model_formula(future_t, params["a"], params["b"], params["alpha"], params["theta"])
-
-# Stochastic part (residuals)
-stochastic_part <- future_residuals$mean
-
-# Final prediction
-future_T <- deterministic_part + stochastic_part
-
-forecast_df <- data.frame(
-  Date = future_dates,
-  Temperature = future_T,
-  Lower = future_T - 1.96 * future_residuals$mean,  # 95% CI
-  Upper = future_T + 1.96 * future_residuals$mean
-)
-
-ggplot() +
-  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG)) +
-  geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
-  geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2) +
-  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") 
-```
-
-The residuals represent short-term deviations from the deterministic trend/seasonality, becoming irrelevant after `r sum(ifelse(round(stochastic_part, 4), yes = 1, 0))` days, which means that in the long run you will get a temperature entirely determined by the deterministic trend, over time, these deviations are expected to fade back to zero (the mean).
-
-Forecast implications:
-
-for forecasting purposes it means a couple of things: that in the short-term my Residuals adjust for recent "shocks" (e.g., a heatwave/cold snap), but in the long-term the forecast relies entirely on the deterministic component (trend + seasonality).
-
-This model doesnt really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model
 
 # Modeling volatility
 
@@ -823,7 +675,7 @@ Fit polynomial curves to model the relationship between day-of-year and volatili
 # Create a dataframe with temperature and date components
 temp_t <- data.frame(
   Date = temps$DAY,  # Assuming the index is a proper Date object
-  T = temps$T_AVG,
+  T = temps$Denoised,
   day = yday(temps$DAY),
   month = month(temps$DAY)
 )
@@ -832,8 +684,8 @@ temp_t <- data.frame(
 vol1 <- temps %>%
   group_by(YEAR, Month) %>%
   summarise(
-    mean_temp = mean(T_AVG, na.rm = TRUE),
-    std_temp = sd(T_AVG, na.rm = TRUE)
+    mean_temp = mean(Denoised, na.rm = TRUE),
+    std_temp = sd(Denoised, na.rm = TRUE)
   ) %>%
   ungroup()
 
@@ -855,10 +707,12 @@ Avoids overfitting by controlling the number of knots.
 
 AIC (Akaike Information Criterion): Helps select the best model by balancing goodness-of-fit and complexity (lower AIC preferred).
 
+The residual sum of squares (RSS) measures the level of variance in the error term, or residuals, of a regression model. The smaller the residual sum of squares, the better your model fits your data; the greater the residual sum of squares, the poorer your model fits your data.
+
 ```{r B-splines, fig.width= 9}
 library(splines)
 x <- 1:366
-y <- SD
+y <- vol$std
 
 # Define the number of knots
 knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
@@ -886,7 +740,7 @@ create_spline_plot <- function(knots, x, y) {
 }
 
 # Generate all the plots
-plots <- lapply(knots, create_spline_plot, x = x, y = SD)
+plots <- lapply(knots, create_spline_plot, x = x, y = y)
 
 # Arrange and display the plots in a 2x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different B-splines models")
@@ -894,7 +748,7 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of te
 
 ## Polynomial models to fit volatility
 
-```{r polynomial, fig.width= 9, fig.width=9}
+```{r polynomial, fig.width= 9}
 # Function to create polynomial model and plot
 x <- 1:366
 create_poly_plot <- function(degree, x, y) {
@@ -918,7 +772,7 @@ create_poly_plot <- function(degree, x, y) {
 
 # Generate plots for degrees 1 through 9
 degrees <- 1:9
-plots <- lapply(degrees, create_poly_plot, x = x, y = SD)
+plots <- lapply(degrees, create_poly_plot, x = x, y = y)
 
 # Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different polynomial models")
@@ -926,32 +780,101 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of te
 
 ## Fourier transforms
 
-```{r fourier}
+```{r fourier int}
 fourier_series <- function(x, n_terms, period = 365.25) {
   omega <- 2 * pi / period
   terms <- list(a0 = 1)
-  
-  for(i in 1:n_terms) {
+
+  for (i in 1:n_terms) {
     terms[[paste0("a", i)]] <- cos(i * omega * x)
     terms[[paste0("b", i)]] <- sin(i * omega * x)
   }
   return(terms)
 }
 
-# Fit 6th order Fourier series
-fourier_terms <- fourier_series(1:366, n_terms = 3)
-model_data <- data.frame(y = SD, fourier_terms)
+fourier_series(1:366, 3) %>%
+  data.frame("actual" = normalize(y, 1)) %>%
+  quickplot(
+    title = "Fourier transformation different components with actual volatility",
+    subtitle = "Order 3 so 7 components",
+    xlab = "Day of the year"
+  )
 
-fourier_fit <- lm(y ~ ., data = model_data)
-vol$fourier <- predict(fourier_fit, newdata = model_data)
-
-# Plot Fourier fit
-ggplot(vol, aes(x = day)) +
-  geom_line(aes(y = std), color = "orange") +
-  geom_line(aes(y = fourier), color = "black") +
-  labs(y = "Std Dev (deg C)", title = "Fourier Series Fit") +
-  theme_minimal()
 ```
+
+```{r fourier plot, fig.width= 9}
+create_fourier_plot <- function(n_terms, x, y) {
+  # Fit Fourier series
+  fourier_terms <- fourier_series(1:366, n_terms = n_terms)
+  model_data <- data.frame(y = y, fourier_terms)
+
+  fourier_fit <- lm(y ~ ., data = model_data)
+  fourier <- predict(fourier_fit, newdata = model_data)
+
+  # Calculate metrics
+  rss <- sum(resid(fourier_fit)^2)
+  aic <- AIC(fourier_fit)
+
+  # Create plot
+  ggplot(data = data.frame(), aes(x = x)) +
+    geom_point(aes(y = y), color = 'orangered3', size = 1) +
+    geom_line(aes(y = fourier), color = 'black', linewidth = 1) +
+    ggtitle(paste("Order:", n_terms, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
+    labs(y = NULL, x = NULL) +
+    theme_classic() +
+    theme(plot.title = element_text(size = 10, face = "bold"))
+}
+
+# Generate plots for degrees 1 through 9
+order <- c(0:8)
+plots <- lapply(order, create_fourier_plot, x = x, y = y)
+
+# Arrange in 3x3 grid
+grid.arrange(grobs = plots, nrow = 3, ncol = 3,
+  left = "Standard deviation of temperatures",
+  bottom = "Day of the year",
+  top = "Different Fourier Series models")
+```
+
+## Regime switch 
+
+```{r Regime switch, fig.width= 9}
+library(changepoint)
+create_changepoint_plot <- function(n_breaks, x, y) {
+  # Detect changepoints in variance with fixed number of breaks
+  cp <- cpt.var(y, method = "PELT", Q = n_breaks)
+
+  # Get regime-wise standard deviation
+  regime_sd <- rep(NA, length(y))
+  segs <- c(1, cpts(cp), length(y))
+  for (i in 1:(length(segs) - 1)) {
+    idx <- segs[i]:(segs[i + 1] - 1)
+    regime_sd[idx] <- sd(y[idx])
+  }
+
+  # RSS (within segment variance sum)
+  rss <- sum((y - na.omit(regime_sd))^2)
+
+  # Build plot
+  data_plot <- data.frame(x = x, y = y, sd_fit = regime_sd)
+  ggplot(data_plot, aes(x = x)) +
+    geom_point(aes(y = y), color = 'purple4', size = 1) +
+    geom_line(aes(y = sd_fit), color = 'black', linewidth = 1) +
+    ggtitle(paste("Breaks:", n_breaks, "\nRSS:", round(rss, 2))) +
+    theme_classic() +
+    theme(plot.title = element_text(size = 10, face = "bold"))
+}
+
+# Create 9 plots for rhe breaks
+breaks <- c(1, 2, 4, 8, 10, 12, 20, 30, 40)
+plots <- lapply(breaks, create_changepoint_plot, x = x, y = y)
+grid.arrange(grobs = plots, nrow = 3, ncol = 3,
+  left = "Standard deviation of temperatures",
+  bottom = "Day of the year",
+  top = "Variance Regime Switching Models")
+
+```
+
 
 ```{r}
 # 3. Print long-term volatility metrics
@@ -1050,6 +973,10 @@ temps %>%
     labs(y = "Temperature", title = "Temperature Model Fit") +
     theme_minimal() +
     theme(legend.position = "bottom")
+
+# Model performance
+cat("  RSS model sine curve:", round(RSS(temps$T_AVG, temps$model), 2), "\n")
+cat("  MAE model fit:", round(MAE(temps$model, temps$T_AVG), 2), "\n")
 ```
 
 This model:
@@ -1064,6 +991,13 @@ This model:
 
     -   Volatility analysis (like your earlier code) \# Montecarlo simulations
 
+modified ou model includes the time drift component
+
+$$
+dT_t=\left(\frac{dT_{bar}(t)}{dt}+κ(T_{bar}(t)−T_t)\right)dt + σ(t)\ dW_t
+$$
+
+
 ```{r}
 a <- params[1]
 b <- params[2]
@@ -1071,6 +1005,7 @@ theta <- atan2(params[3], params[4])
 alpha <- sqrt(params[3]^2 + params[4]^2)
 kappa <- as.double(kappa)
 
+data.frame(a = a, b = b, theta = theta, alpha = alpha, kappa = kappa)
 
 # 1. Temperature Model Functions
 T_model <- function(x, a, b, alpha, theta) {
@@ -1082,7 +1017,7 @@ dT_model <- function(x, a, b, alpha, theta) {
   b + alpha * omega * cos(omega * x + theta)
 }
 
-# 2. Prepare Data (assuming temp_t is your dataframe)
+# 2. Prepare Data
 if (inherits(temps$DAY, "Date")) {
   first_ord <- as.numeric(temps$DAY[1])
   temp_t$ordinal <- as.numeric(temps$DAY)
@@ -1094,6 +1029,7 @@ if (inherits(temps$DAY, "Date")) {
 
 # 3. Apply Model with Given Parameters
 Tbar_params <- list(a = a, b = b, alpha = alpha, theta = theta)
+
 temps$model_fit <- T_model(
   temp_t$ordinal - first_ord,
   Tbar_params$a,
@@ -1102,21 +1038,54 @@ temps$model_fit <- T_model(
   Tbar_params$theta
 )
 
-# 4. Plot Results
-temps %>%
-  tail(2000) %>%
-  ggplot(aes(x = DAY)) +
-    geom_point(aes(y = T_AVG, color = "Observed"), shape = 1, size = 2) +
-    geom_line(aes(y = model_fit, color = "Model Fit"), linetype = "dashed") +
-    scale_color_manual(values = c("Observed" = "black", "Model Fit" = "red")) +
-    labs(title = "Temperature Model Fit", y = "Temperature (°C)") +
-    theme_minimal()
+grid.arrange(
+  nrow = 2,
+  ncol = 2,
+  ggplot(temps %>% head(lookback), aes(x = DAY)) +
+    geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
+    geom_line(aes(y = model_fit), color = 'orange', linewidth = 2) +
+    labs(
+      title = paste0(
+        "Temperature Model Fit (First ",
+        lookback / 365,
+        " years)"
+      ),
+      x = NULL,
+      y = NULL
+    ),
+
+  ggplot(temps %>% head(lookback), aes(x = DAY)) +
+    geom_line(aes(y = T_AVG - model_fit), color = 'black', linewidth = 0.5) +
+    labs(
+      title = paste0("Residuals (First ", lookback / 365, " years)"),
+      x = NULL,
+      y = NULL
+    ),
+
+  ggplot(temps %>% tail(lookback), aes(x = DAY)) +
+    geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
+    geom_line(aes(y = model_fit), color = 'orange', linewidth = 2) +
+    labs(
+      title = paste0("Temperature Model Fit (Last ", lookback / 365, " years)"),
+      x = NULL,
+      y = NULL
+    ),
+
+  ggplot(temps %>% tail(lookback), aes(x = DAY)) +
+    geom_line(aes(y = T_AVG - model_fit), color = 'black', linewidth = 0.5) +
+    labs(
+      title = paste0("Residuals (Last ", lookback / 365, " years)"),
+      x = NULL,
+      y = NULL
+    )
+)
+
 
 # 6. Spline Fit for Volatility
 spline_fit <- function(knots, x, y) {
   x_new <- seq(0, 1, length.out = knots + 2)[2:(knots + 1)]
   knots_pos <- quantile(x, probs = x_new)
-  bspline <- lm(y ~ bs(x, knots = knots_pos, degree = 3))
+  bspline <- lm(y ~ bs(x, knots = knots_pos, degree = 15))
   predict(bspline, newdata = data.frame(x = x))
 }
 
@@ -1254,12 +1223,12 @@ plot_data <- bind_rows(
 
 # Create the plot
 ggplot(plot_data, aes(x = Temperature, fill = Season)) +
-  geom_histogram(position = "identity", alpha = 0.5, bins = 50) +
+  geom_histogram(position = "identity", alpha = 0.8, bins = 80) +
   geom_vline(aes(xintercept = Tbar_winter), color = "darkblue",
               linewidth = 1.5, linetype = "solid") +
   geom_vline(aes(xintercept = Tbar_summer), color = "darkorange",
               linewidth = 1.5, linetype = "solid") +
-  scale_fill_manual(values = c("Summer" = "orange", "Winter" = "blue")) +
+  scale_fill_manual(values = c(Winter="steelblue", Summer="orange")) +
   labs(title = "Winter vs Summer Temperature MC Sims",
         x = "Temperature (°C)", 
         y = "Frequency") +
@@ -1267,9 +1236,189 @@ ggplot(plot_data, aes(x = Temperature, fill = Season)) +
   theme(legend.position = "bottom")
 ```
 
+# Sidequests
+
+## Sidequest: overlap of the dataset
+
+One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
+
+```{r each year overlapped}
+pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_AVG) %>%
+  pivot_wider(names_from = YEAR, values_from = T_AVG)
+
+
+MAX_pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_MAX) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MAX)
+
+MIN_pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_MIN) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MIN)
+
+
+MEAN <- apply(pivot_df[-1], 1, mean, na.rm=TRUE)
+MEDIAN <- apply(pivot_df[-1], 1, median, na.rm=TRUE)
+IQR <- apply(pivot_df[-1], 1, IQR, na.rm=TRUE)
+SD <- apply(pivot_df[-1], 1, sd, na.rm=TRUE)
+
+data.frame(MEAN = MEAN,
+          MEDIAN = MEDIAN) %>% 
+  quickplot(title = "Mean and median across the year", xlab = "Day of the year", ylab = "Temperature")
+
+data.frame(IQR = SMA(IQR, n = 7),
+          SD = SD) %>% 
+  quickplot(title = "Standard deviation and Inter-quartile-range across the year",
+            subtitle = "IQR MA(7)", xlab = "Day of the year", ylab = "Temperature")
+
+data.frame(MAX = apply(pivot_df[-1], 1, max, na.rm=TRUE), 
+          MIN = apply(pivot_df[-1], 1, min, na.rm=TRUE)) %>%
+  mutate(AVG = (MAX + MIN)/2) %>% 
+  mutate(RANGE = MAX - MIN) %>% 
+  quickplot(title = "Range across the year", show_legend = T, xlab = "Day of the year", ylab = "Temperature")
+
+
+melt(pivot_df[-1], id.vars = NULL) %>% 
+  ggplot(aes(x = variable, y = value)) +
+    geom_boxplot(fill = "gray") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  
+    labs(title = "Boxplot for all years", x = NULL, y = NULL)
+
+DATASET %>%
+  select(Month, T_AVG) %>%
+  group_by(Month) %>% 
+  ggplot(aes(x = Month, y = T_AVG, group = Month)) +
+    geom_boxplot(fill = "gray") +
+    scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
+    labs(title = "Boxplot for all months across the years", x = NULL, y = NULL)
+```
+
+### How is this year compared to the rest
+
+this dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
+
+```{r avg hottness}
+ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
+  geom_line() +
+  labs(title = "All years overlapped", x = "Day of the year", y = "Index level of returns")
+
+
+THISYEAR <- data.frame(
+  c(DATASET[DATASET$YEAR == 2024, ]["T_MAX"]),
+  c(DATASET[DATASET$YEAR == 2024, ]["T_AVG"]),
+  c(DATASET[DATASET$YEAR == 2024, ]["T_MIN"])
+)
+
+cbind(pivot_df,
+      "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
+      "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
+      "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)
+) %>%
+  round(2) %>%
+  ggplot(aes(x = DOY)) +
+    geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = 0.2) +
+    geom_line(aes(y = MEAN, color = "MEAN"), linewidth = 1) +
+    geom_line(aes(y = pivot_df$`2025`, color = "AVG_Current"), linewidth = 1.3) +
+    geom_line(aes(y = MAX_pivot_df$`2025`, color = "MAX_Current"), linewidth = 0.6, alpha = 1) +
+    geom_line(aes(y = MIN_pivot_df$`2025`, color = "MIN_Current"), linewidth = 0.6, alpha = 1) +
+  scale_color_manual(name = NULL, values = c(MEAN = "orange2", AVG_Current = "olivedrab", 
+                                                MIN_Current = "lightblue", MAX_Current = "indianred")) +
+  labs(title = "Is this year hotter on average?", y = NULL, x = NULL)+
+  theme(legend.position = "bottom")
+```
+
+## Sidequest: predicting temperatures in the future
+
+Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature une month from now and
+
+```{r}
+#| warnings: False
+model_formula <- function(t, a, b, a1, b1) {
+  omega <- 2 * pi / 365.25
+  a + b * t + a1 * cos(omega * t) + b1 * sin(omega * t)
+}
+
+forecast_N <- 30
+new_t <- max(temps$NUM_DAY) + forecast_N  # forecast_N days after last observation
+predicted_T <- model_formula(new_t, params["a"], params["b"], params["alpha"], params["theta"])
+cat("predicted temperature for", as.character(max(temps$DAY)+forecast_N), "=", predicted_T)
+
+arima_model <- Arima(temps$RESID, order = c(2, 0, 0), include.mean = FALSE)
+future_residuals <- forecast(arima_model, h = forecast_N)  # forecast_N steps ahead
+
+first_date <- min(temps$DAY)
+future_dates <- seq(max(temps$DAY), by = "day", length.out = forecast_N)
+future_t <- as.numeric(difftime(future_dates, first_date, units = "days"))
+
+# Deterministic part
+deterministic_part <- model_formula(future_t, params["a"], params["b"], params["alpha"], params["theta"])
+
+# Stochastic part (residuals)
+stochastic_part <- future_residuals$mean
+
+# Final prediction
+future_T <- deterministic_part + stochastic_part
+
+forecast_df <- data.frame(
+  Date = future_dates,
+  Temperature = future_T,
+  Lower = future_T - 1.96 * future_residuals$mean,  # 95% CI
+  Upper = future_T + 1.96 * future_residuals$mean
+)
+
+ggplot() +
+  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG)) +
+  geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
+  geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2) +
+  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") 
+```
+
+The residuals represent short-term deviations from the deterministic trend/seasonality, becoming irrelevant after `r sum(ifelse(round(stochastic_part, 4), yes = 1, 0))` days, which means that in the long run you will get a temperature entirely determined by the deterministic trend, over time, these deviations are expected to fade back to zero (the mean).
+
+Forecast implications:
+
+for forecasting purposes it means a couple of things: that in the short-term my Residuals adjust for recent "shocks" (e.g., a heatwave/cold snap), but in the long-term the forecast relies entirely on the deterministic component (trend + seasonality).
+
+This model doesnt really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model
+
+
 
 ```{r}
 #| include: False
 beepr::beep(sound = 4)
+```
+
+```{r}
+# Assuming trading_dates and sim_length already defined
+x_vals <- as.numeric(trading_dates) - first_ord
+Tbar_vals <- T_model(x_vals, a, b, alpha, theta)
+dTbar_vals <- dT_model(x_vals, a, b, alpha, theta)
+sigma_vals <- volatility[yday(trading_dates)]
+
+data.frame(
+  x_vals = x_vals,
+  Tbar_vals = Tbar_vals,
+  dTbar_vals = dTbar_vals,
+  sigma_vals = sigma_vals
+) %>% show_df()
+
+data.frame(
+  x_vals = x_vals,
+  Tbar_vals = Tbar_vals,
+  dTbar_vals = dTbar_vals,
+  sigma_vals = sigma_vals
+) %>% apply(2, normalize) %>% quickplot()
+
+# library(sde)
+# # Interpolate for arbitrary t
+# drift_fun <- approxfun(seq_along(Tbar_vals), dTbar_vals + kappa * (Tbar_vals - Tbar_vals))  # Initially centered
+# sigma_fun <- approxfun(seq_along(sigma_vals), sigma_vals)
+
+# d <- expression(drift_fun(t))
+# s <- expression(sigma_fun(t))
+
+# X <- sde.sim(X0 = Tbar_vals[1], drift = d, sigma = s, N = length(trading_dates), T = 3)
+
+# plot(X, type = "l", main = "SDE Simulated Seasonal Temperature")
 ```
 
