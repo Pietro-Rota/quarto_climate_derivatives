@@ -1,6 +1,7 @@
 ---
 title: "Temperature data option calculation"
 date-modified: "`r Sys.Date()`"
+editor: source
 format:
   html: 
     code-tools: true
@@ -13,7 +14,7 @@ format:
     # monofont: sans
 toc: true
 toc-depth: 2
-self-contained: true
+# self-contained: true
 number-sections: true
 lang: en
 author:
@@ -428,7 +429,7 @@ temps$RESID <-  temps$T_AVG - temps$TREND - temps$SEAS
 
 just to be certain i looked at if the residuals and the fitted values matched the $\overline T$ and $Residuals$ by checking percentage of same values as the rounding decimals increase The logic is that if the data sets are anything alike (like 2 different models results for the same dataset) you should see how far in the rounding are the data sets similar
 
-```{r}
+```{r model_stats}
 cat("T_BAR VS fitted from the non linear squares \n")
 check_acc(temps$BAR, fitted(fit),15)
 
@@ -671,7 +672,7 @@ temps_OU %>%
 
 Fit polynomial curves to model the relationship between day-of-year and volatility.
 
-```{r}
+```{r vol modeling}
 # Create a dataframe with temperature and date components
 temp_t <- data.frame(
   Date = temps$DAY,  # Assuming the index is a proper Date object
@@ -836,7 +837,7 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3,
   top = "Different Fourier Series models")
 ```
 
-## Regime switch 
+## Regime switch
 
 ```{r Regime switch, fig.width= 9}
 library(changepoint)
@@ -864,7 +865,6 @@ create_changepoint_plot <- function(n_breaks, x, y) {
     theme_classic() +
     theme(plot.title = element_text(size = 10, face = "bold"))
 }
-
 # Create 9 plots for rhe breaks
 breaks <- c(1, 2, 4, 8, 10, 12, 20, 30, 40)
 plots <- lapply(breaks, create_changepoint_plot, x = x, y = y)
@@ -876,7 +876,7 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3,
 ```
 
 
-```{r}
+```{r AR on vol_DOY}
 # 3. Print long-term volatility metrics
 cat("Trend or long term volatility is easy: ~", round(mean(vol1$std_temp, na.rm = TRUE), 3), "\n")
 cat("Gamma is:", round(sd(vol1$std_temp, na.rm = TRUE), 3), "\n")
@@ -887,118 +887,15 @@ coef <- ar_model$coef
 residuals <- ar_model$residuals
 
 cat("Rate of mean reversion of volatility process is:", round(coef["ar1"], 3), "\n")
-print(summary(ar_model))
+summary(ar_model)
 ```
-
-### IDK
-
-This code models temperature data using a linear trend plus seasonal component, then analyzes the residuals.
-
-The model combines:
-
--   A linear trend ($a+bx$)
-
--   A seasonal sine wave ( $\alpha sin(\omega x + \theta)$), where:
-
-$\alpha$ = amplitude (how strong the seasonality is)
-
-$\theta$ = phase shift (when peaks/troughs occur)
-
-$\omega$ = fixed frequency (\$2π/365.25\$ to match yearly cycles)
-
-Model Fitting: Uses nlsLM() from the minpack.lm package for Levenberg-Marquardt fitting
-
--   Uses nonlinear least-squares (**`nlsLM`**) to fit:
-
-    -   $a$ = intercept (baseline temperature)
-
-    -   $b$ = slope (long-term warming/cooling trend)
-
-    -   $a_1$, $b_1$ = sine/cosine coefficients (combined into $\alpha$ and $\theta$)
-
-```{r}
-library(minpack.lm)  # For Levenberg-Marquardt nonlinear least squares
-
-# Define the model functions
-model <- function(x, params) {
-  a <- params[1]
-  b <- params[2]
-  a1 <- params[3]
-  b1 <- params[4]
-  
-  omega <- 2*pi/365.25
-  theta <- atan2(a1, b1)
-  alpha <- sqrt(a1^2 + b1^2)
-  
-  cat("Parameters:\n")
-  cat(sprintf("     a %0.3f\n", a))
-  cat(sprintf("     b %0.3f\n", b))
-  cat(sprintf(" alpha %0.3f\n", alpha))
-  cat(sprintf(" theta %0.3f\n", theta))
-  
-  y_pred <- a + b*x + alpha*sin(omega*x + theta)
-  return(y_pred)
-}
-
-model_fit <- function(x, a, b, a1, b1) {
-  omega <- 2*pi/365.25
-  y_pred <- a + b*x + a1*cos(omega*x) + b1*sin(omega*x)
-  return(y_pred)
-}
-
-# Prepare the data
-first_ord <- as.numeric(temp_t$Date[1])
-x_data <- as.numeric(temp_t$Date) - first_ord
-y_data <- temps$T_AVG
-
-# Fit the model using nonlinear least squares
-fit <- nlsLM(
-  y_data ~ model_fit(x_data, a, b, a1, b1),
-  start = list(a = mean(y_data), b = 0, a1 = 0, b1 = 0),
-  control = nls.lm.control(maxiter = 100)
-)
-
-# Extract parameters
-params_all <- coef(fit)
-temps$model <- model(x_data, params_all)
-temp_t$res <- temps$T_AVG - temps$model
-
-# Plot the last 2000 observations
-temps %>%
-  tail(2000) %>%
-  ggplot(aes(x = DAY)) +
-    geom_point(aes(y = T_AVG, color = "Observed"), size = 2) +
-    geom_line(aes(y = model, color = "Model"), linewidth = 1) +
-    scale_color_manual(values = c("Observed" = "blue", "Model" = "darkorange")) +
-    labs(y = "Temperature", title = "Temperature Model Fit") +
-    theme_minimal() +
-    theme(legend.position = "bottom")
-
-# Model performance
-cat("  RSS model sine curve:", round(RSS(temps$T_AVG, temps$model), 2), "\n")
-cat("  MAE model fit:", round(MAE(temps$model, temps$T_AVG), 2), "\n")
-```
-
-This model:
-
-1.  **Detects long-term trends** (climate change via $b$)
-
-2.  **Quantifies seasonality** (summer/winter differences via $\alpha$)
-
-3.  **Identifies anomalies** (via residuals **`res`**), useful for:
-
-    -   Weather derivative pricing
-
-    -   Volatility analysis (like your earlier code) \# Montecarlo simulations
-
-modified ou model includes the time drift component
 
 $$
 dT_t=\left(\frac{dT_{bar}(t)}{dt}+κ(T_{bar}(t)−T_t)\right)dt + σ(t)\ dW_t
 $$
 
-
-```{r}
+# Montecarlo simulations
+```{r MNC}
 a <- params[1]
 b <- params[2]
 theta <- atan2(params[3], params[4])
@@ -1093,7 +990,7 @@ volatility <- spline_fit(15, vol$day, vol$std)
 
 # Plot Volatility
 ggplot(vol, aes(x = day)) +
-  geom_point(aes(y = std, color = "Observed Volatility"), shape = 8) +
+  geom_point(aes(y = std, color = "Observed Volatility")) +
   geom_line(aes(y = volatility, color = "Spline Fit"), linewidth = 1) +
   scale_color_manual(
     values = c("Observed Volatility" = "blue", "Spline Fit" = "black")
@@ -1114,14 +1011,8 @@ euler_step <- function(row, kappa, M) {
   T_det + T_mrev + sigma
 }
 
-monte_carlo_temp <- function(
-  trading_dates,
-  Tbar_params,
-  vol_model,
-  first_ord,
-  M = 1,
-  kappa = 0.2430516
-) {
+monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model, 
+                            first_ord, M = 1, kappa = 0.2430516) {
   # Convert dates to numeric if needed
   if (inherits(trading_dates, "Date")) {
     trading_numeric <- as.numeric(trading_dates)
@@ -1132,20 +1023,11 @@ monte_carlo_temp <- function(
 
   # Calculate Tbar and dTbar
   x_vals <- trading_numeric - first_ord
-  Tbars <- T_model(
-    x_vals,
-    Tbar_params$a,
-    Tbar_params$b,
-    Tbar_params$alpha,
-    Tbar_params$theta
-  )
-  dTbars <- dT_model(
-    x_vals,
-    Tbar_params$a,
-    Tbar_params$b,
-    Tbar_params$alpha,
-    Tbar_params$theta
-  )
+  Tbars <- T_model(x_vals, Tbar_params$a, Tbar_params$b, 
+                    Tbar_params$alpha, Tbar_params$theta)
+
+  dTbars <- dT_model(x_vals, Tbar_params$a, Tbar_params$b, 
+                    Tbar_params$alpha, Tbar_params$theta)
 
   # Create simulation dataframe
   mc_temps <- data.frame(
@@ -1195,7 +1077,7 @@ sim_results$mc_sims %>%
   theme(legend.position = "bottom")
 ```
 
-```{r}
+```{r MNC sym}
 # Set number of simulations
 no_sims <- 100000
 
@@ -1312,8 +1194,7 @@ THISYEAR <- data.frame(
 cbind(pivot_df,
       "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
       "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
-      "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)
-) %>%
+      "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)) %>%
   round(2) %>%
   ggplot(aes(x = DOY)) +
     geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = 0.2) +
@@ -1329,9 +1210,9 @@ cbind(pivot_df,
 
 ## Sidequest: predicting temperatures in the future
 
-Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature une month from now and
+Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature one month from now and
 
-```{r}
+```{r forecast compared to real}
 #| warnings: False
 model_formula <- function(t, a, b, a1, b1) {
   omega <- 2 * pi / 365.25
@@ -1379,11 +1260,20 @@ Forecast implications:
 
 for forecasting purposes it means a couple of things: that in the short-term my Residuals adjust for recent "shocks" (e.g., a heatwave/cold snap), but in the long-term the forecast relies entirely on the deterministic component (trend + seasonality).
 
-This model doesnt really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model
+This model doesn't really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model
 
+## forecast seasonal plots
 
+```{r ggforecast}
+ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::ggseasonplot()
+ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagplot()
+ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagchull()
 
-```{r}
+ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
+
+```
+
+```{r beep}
 #| include: False
 beepr::beep(sound = 4)
 ```
@@ -1408,17 +1298,4 @@ data.frame(
   dTbar_vals = dTbar_vals,
   sigma_vals = sigma_vals
 ) %>% apply(2, normalize) %>% quickplot()
-
-# library(sde)
-# # Interpolate for arbitrary t
-# drift_fun <- approxfun(seq_along(Tbar_vals), dTbar_vals + kappa * (Tbar_vals - Tbar_vals))  # Initially centered
-# sigma_fun <- approxfun(seq_along(sigma_vals), sigma_vals)
-
-# d <- expression(drift_fun(t))
-# s <- expression(sigma_fun(t))
-
-# X <- sde.sim(X0 = Tbar_vals[1], drift = d, sigma = s, N = length(trading_dates), T = 3)
-
-# plot(X, type = "l", main = "SDE Simulated Seasonal Temperature")
 ```
-
