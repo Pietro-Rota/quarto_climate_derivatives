@@ -841,7 +841,8 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3,
 ## Regime switch
 
 ```{r Regime switch, fig.width= 9}
-library(changepoint)
+#| warnings: False
+library(changepoint, quietly = T)
 create_changepoint_plot <- function(n_breaks, x, y) {
   # Detect changepoints in variance with fixed number of breaks
   cp <- cpt.var(y, method = "PELT", Q = n_breaks)
