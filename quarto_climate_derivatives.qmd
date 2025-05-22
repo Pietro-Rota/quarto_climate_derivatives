@@ -202,14 +202,18 @@ cleandataset <- DATASET %>%
 
 desc_df(cleandataset)
 
-cleandataset %>% 
-  ggplot(aes(x=index(.)))+
+plot1 <- cleandataset %>% 
+  as.data.frame() %>% 
+  mutate(year = index(cleandataset)) %>% 
+  ggplot(aes(x=year))+
   geom_line(aes(y=T_MAX, color = "T_MAX"))+
   geom_line(aes(y=T_MIN, color = "T_MIN"))+
   geom_line(aes(y=T_AVG, color = "T_AVG"))+
   labs(title = "Last 43 years of recorded data", y="Temperature", x=NULL)+
   scale_color_manual(name = "Temps", 
-                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))
+                    values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))
+
+plot1
 ```
 
 However this is not that useful so let me zoom in on the last third of the database (approximately 2014 onward)
@@ -228,14 +232,110 @@ tail(cleandataset, lookback) %>%
   labs(title = "Last 10 years of recorded data", y="Temperature", x=NULL)+
   scale_color_manual(name = "Temps", 
                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))
+```
 
-# library(gganimate)
+
+```{r gganimate}
+library(gganimate)
 # animplot1 <- plot1 +
 #   labs(subtitle = "year: {frame_time}") +
 #   transition_reveal(year) + 
 #   view_follow(fixed_y = TRUE)
-# 
 # animate(animplot1, nframes = 20, renderer = gifski_renderer(), fps = 30, duration = 10, end_pause = 60, res = 100)
+
+months365 <- c()  # initialize empty vector
+
+for (i in month.abb) {
+  months365 <- c(months365, i, rep(" ", 4))
+}
+monthplot <- months365[-52][-47][-40][-33][-22][-13][-8]
+plot_data <- cleandataset %>%
+  as.data.frame() %>%
+  mutate(
+    date = index(cleandataset),
+    year = year(date),
+    month = month(date),
+    week = week(date)
+  ) %>%
+  group_by(year, week) %>%
+  summarise(T_AVG = mean(T_AVG), .groups = 'drop') %>%
+  arrange(year, week)
+
+# Add `frame` variable for animation
+funny_plot <- ggplot(plot_data, aes(x = factor(week), y = T_AVG, group = year, color = T_AVG)) +
+  geom_line(linewidth = 1.2, show.legend = FALSE) +
+  coord_polar() +
+  scale_x_discrete(breaks = 1:53, labels = monthplot) +
+  scale_color_gradient(low = "blue", high = "red") +
+  labs(subtitle = "Year: {frame_time}", x = NULL, y = NULL) +
+  transition_reveal(year)
+
+animate(funny_plot, fps = 30, duration = 15, end_pause =120)
+```
+
+```{r}
+library(tidyverse)
+
+pivot_df <- DATASET %>%
+  mutate(t_diff = c(NA, diff(T_AVG))) %>% 
+  select(Month, YEAR, t_diff) %>%
+  pivot_wider(names_from = YEAR, values_from = t_diff, values_fn = median) %>% 
+  mutate(Month = month.abb) %>% 
+  melt(id.vars = "Month", variable.name = "Year") %>% 
+  arrange(Year) %>% 
+  drop_na() %>% 
+  mutate(Year = as.integer(Year)+1980)
+  
+pivot_df %>% select(value) %>% quickplot()
+
+pivot_df %>% ggplot(aes(x = Month, y = value, group = Year, color = Year)) + 
+  geom_line()
+
+last_dec <- pivot_df %>%
+  filter(Month == "Dec") %>% 
+  mutate(Year = Year - 1,
+  Month = "last_Dec")
+
+next_jan <- pivot_df %>%
+  filter(Month == "Jan") %>% 
+  mutate(Year = Year + 1,
+  Month = "Next_jan")
+
+t_data <- bind_rows(pivot_df, next_jan) %>%
+  mutate(Month = factor(Month, levels = c(month.abb, "next_Jan")),
+         Month_number = as.numeric(Month)) %>% drop_na()
+
+annotation <- t_data %>%
+  slice_max(Year-1) %>%
+  slice_max(Month_number)
+
+temp_lines <- tibble(
+  x = 12,
+  y = c(1.5, 2.0),
+  labels = c("1.5\u00B0C", "2.0\u00B0C")
+)
+
+month_labels <- tibble(
+  x = 1:12,
+  labels = month.abb,
+  y = 2.7
+)
+
+t_data %>% 
+  ggplot(aes(x=Month_number, y=value, group=Year, color=Year)) +
+  geom_hline(yintercept = c(1, 2.0), color="red") +
+  geom_line() +
+  scale_x_continuous(breaks=1:12,
+                    labels=month.abb, expand = c(0,0),
+                    sec.axis = dup_axis(name = NULL, labels=NULL)) +
+  scale_y_continuous(breaks = seq(-2, 2, 0.2),
+                    limits = c(-2, 2.7), expand = c(0, -0.7), 
+                    sec.axis = dup_axis(name = NULL, labels=NULL)) + 
+  coord_polar(start = 2*pi/12) +
+  labs(x = NULL,
+      y = NULL,
+      title = "Global temperature change (1981-2025)")
+
 ```
 
 ## Seasonal analysis
@@ -247,7 +347,7 @@ Winter \~ October-March
 Summer \~ April-September
 
 ```{r Distribution of season}
- DATASET_seas <- DATASET %>%
+DATASET_seas <- DATASET %>%
   group_by(Month < 4|Month>9) %>%
   rename("Season"="Month < 4 | Month > 9") %>%
   mutate(Season = ifelse(Season, "Winter", "Summer"))
@@ -274,7 +374,7 @@ ggplot(winter_dataset)+
   geom_histogram(aes(x = T_AVG, fill = "T_AVG"), alpha=0.8, bins = 80)+
   labs(title = "Distribution charts of winter",x=NULL)+
   scale_fill_manual(name = NULL, 
-                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))+
+                    values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))+
   theme(legend.position = "bottom")
 
 ,
@@ -320,9 +420,9 @@ DATASET_seas %>%
   opt_stylize(5) %>% 
   tab_header("Data exploration", "what is the highest and lowest in my database") %>% 
   cols_label(T_min_min = "Min",
-             T_min_max = "Max",
-             T_max_min = "Min",
-             T_max_max = "Max") %>% 
+              T_min_max = "Max",
+              T_max_min = "Min",
+              T_max_max = "Max") %>% 
   tab_spanner(label = "T_MIN", columns = 2:3) %>%  
   tab_spanner(label = "T_MAX", columns = 4:5)
 ```
@@ -414,8 +514,8 @@ omega <- 2 * pi / 365.25
 temps$NUM_DAY <- 1:nrow(temps)
 
 fit <- nls(Denoised ~ sin_component(NUM_DAY, a, b, alpha, theta),
-           data = temps,
-           start = list(a = 1, b = 0, alpha = 1, theta = 0))
+          data = temps,
+          start = list(a = 1, b = 0, alpha = 1, theta = 0))
 
 
 # Get coefficients and confidence intervals for the model
@@ -874,9 +974,7 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3,
   left = "Standard deviation of temperatures",
   bottom = "Day of the year",
   top = "Variance Regime Switching Models")
-
 ```
-
 
 ```{r AR on vol_DOY}
 # 3. Print long-term volatility metrics
@@ -897,6 +995,7 @@ dT_t=\left(\frac{dT_{bar}(t)}{dt}+κ(T_{bar}(t)−T_t)\right)dt + σ(t)\ dW_t
 $$
 
 # Montecarlo simulations
+
 ```{r MNC}
 a <- params[1]
 b <- params[2]
