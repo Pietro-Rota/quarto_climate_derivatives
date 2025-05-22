@@ -1,6 +1,5 @@
 ---
 title: "Temperature data option calculation"
-date-modified: "`r Sys.Date()`"
 editor: source
 format:
   html: 
@@ -11,7 +10,21 @@ format:
     df-print: kable
     code-block-border-left: "royalblue"
     code-block-bg: true
-    # monofont: sans
+    toc: true
+  pdf:
+    latex-engine: xelatex
+    embed-resources: true
+    code-block: false
+    citation-package: natbib
+    includes:
+      in-header: header.tex
+    code-tools: true
+    code-fold: true
+    df-print: kable
+    number-sections: true
+    pdf-metadata:
+      subject: "Temperature data option calculation"
+      keywords: [temperature, finance, Monte Carlo, R]
 toc: true
 toc-depth: 2
 # self-contained: true
@@ -20,9 +33,7 @@ number-sections: true
 lang: en
 author:
   - name: Pietro Rota
-    id: PR
-    email: pietro.rota01@icatt.it
-    affiliation: 
+    affiliation:
       - name: Università cattolica del sacro cuore
         city: Milano
         state: IT
@@ -30,9 +41,14 @@ author:
 project:
   type: website
   output-dir: docs
+prefer-html: true
 ---
 
 # Weather Derivatives Temperature Options
+
+::: {.content-visible html}
+**Last updated:** `r Sys.Date()`
+:::
 
 ```{r setup}
 #| title: setup
@@ -87,7 +103,7 @@ Functions defined in this document
 required_functions(file)
 ```
 
-```{r time info}
+```{r time info, echo=FALSE}
 cat("time of creation", "\n")
 print(file.info(file)$ctime, "\n")
 cat("LAST MODIFICATION", "\n")
@@ -142,11 +158,15 @@ map_data <- data.frame(
   lon = -81.5614
 )
 # Create a leaflet map
-leaflet(map_data) %>%
-  addTiles() %>%  # Add default OpenStreetMap tiles
-  addMarkers(~lon, ~lat, label = ~name, ) %>%
-  addCircleMarkers(~lon, ~lat, radius = 10, color = "red", fillOpacity = 0.8) %>% 
-  setView(lng = map_data$lon, lat = map_data$lat, zoom = 12)
+if (knitr::is_html_output()) {
+  leaflet(map_data) %>%
+    addTiles() %>% # Add default OpenStreetMap tiles
+    addMarkers(~lon, ~lat, label = ~name, ) %>%
+    addCircleMarkers(~lon, ~lat, radius = 10, color = "red", fillOpacity = 0.8) %>%
+    setView(lng = map_data$lon, lat = map_data$lat, zoom = 12)
+} else {
+  print("interactive map of disneyworld in the html version")
+}
 ```
 
 It is important to note that the dataset uses a value of -999 to denote missing data, which I've removed and replaced with the mean of the overall dataset. Either when a parameter cannot be computed or falls outside the range of available source data
@@ -190,7 +210,18 @@ ORIGINAL_DATASET[ifelse(find_outliers(ORIGINAL_DATASET$T2M_MAX)==0,FALSE,TRUE),]
     labs(x= NULL, y =NULL, title = "Days where the sensor malfunctioned", 
         subtitle = "Identified by remove outliers")
 
-datatable(smart_round(DATASET, digits = 3))
+if (knitr::is_html_output()) {
+DATASET %>% select(DAY, T_MAX, T_MIN, T_AVG) %>% 
+  smart_round(digits = 3) %>% 
+  datatable() %>% 
+  formatStyle("T_MAX", 
+  background = styleColorBar(range(DATASET$T_MAX), "indianred3"),
+  backgroundSize = "100% 80%", 
+  backgroundRepeat = "no-repeat"
+  )
+  } else {
+  print("interactive table of the data in the html version")
+}
 ```
 
 ## Initial data visualization
@@ -237,11 +268,6 @@ tail(cleandataset, lookback) %>%
 
 ```{r gganimate}
 library(gganimate)
-# animplot1 <- plot1 +
-#   labs(subtitle = "year: {frame_time}") +
-#   transition_reveal(year) + 
-#   view_follow(fixed_y = TRUE)
-# animate(animplot1, nframes = 20, renderer = gifski_renderer(), fps = 30, duration = 10, end_pause = 60, res = 100)
 
 months365 <- c()  # initialize empty vector
 
@@ -249,6 +275,7 @@ for (i in month.abb) {
   months365 <- c(months365, i, rep(" ", 4))
 }
 monthplot <- months365[-52][-47][-40][-33][-22][-13][-8]
+
 plot_data <- cleandataset %>%
   as.data.frame() %>%
   mutate(
@@ -261,7 +288,7 @@ plot_data <- cleandataset %>%
   summarise(T_AVG = mean(T_AVG), .groups = 'drop') %>%
   arrange(year, week)
 
-# Add `frame` variable for animation
+if (knitr::is_html_output()) {
 funny_plot <- ggplot(plot_data, aes(x = factor(week), y = T_AVG, group = year, color = T_AVG)) +
   geom_line(linewidth = 1.2, show.legend = FALSE) +
   coord_polar() +
@@ -271,6 +298,9 @@ funny_plot <- ggplot(plot_data, aes(x = factor(week), y = T_AVG, group = year, c
   transition_reveal(year)
 
 animate(funny_plot, fps = 30, duration = 15, end_pause =120)
+} else {
+print("animated plot in html")
+}
 ```
 
 ```{r}
@@ -286,11 +316,6 @@ pivot_df <- DATASET %>%
   drop_na() %>% 
   mutate(Year = as.integer(Year)+1980)
   
-pivot_df %>% select(value) %>% quickplot()
-
-pivot_df %>% ggplot(aes(x = Month, y = value, group = Year, color = Year)) + 
-  geom_line()
-
 last_dec <- pivot_df %>%
   filter(Month == "Dec") %>% 
   mutate(Year = Year - 1,
@@ -438,9 +463,16 @@ runSD(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term
 
 The first step in pricing temperature options is to decompose the time series into distinct components that each represent different underlying patterns. This process is essential for understanding the structure of the data and for developing predictive models. In basic temrs it can be expressed as the sum of three main components:$y_t=T_t+S_t+e_t$, Here, $T_t$ is the trend component that captures the long-term movement, $S_t$ represents the seasonal variations (periodic patterns), and $e_t$ refers to the residuals or noise in the data.
 
-which in our case becomes $$\overline{T_t} = T_{trend} + T_{seasonal}+ Residuals$$ The approach was to develop each component indipendently
+which in our case becomes 
+$$
+\overline{T_t} = T_{trend} + T_{seasonal}+ Residuals
+$$
 
-\[T\_{trend} = a + b\cdot t\]
+The approach was to develop each component indipendently
+
+$$
+T_{trend} = a + b\cdot t
+$$
 
 :
 
@@ -448,7 +480,6 @@ The trend component could be as simple as a straight line or a moving average
 
 This form captures the cyclical nature of temperature changes throughout the year, like daily or annual temperature fluctuations.
 
-\[ T\_{seasonal} = \alpha \cdot \sin(\omega \cdot t + \theta) \]
 
 $$
 T_{seasonal} = \alpha \cdot \sin(\omega \cdot t + \theta)
@@ -460,7 +491,11 @@ $$
 
 -   $\theta$ is the phase shift
 
-And lastly the residuals are just: $$Residuals = T_t - T_{trend} + T_{seasonal}$$:
+And lastly the residuals are just: 
+
+$$
+Residuals = T_t - T_{trend} + T_{seasonal}
+$$
 
 Recent research has suggested that partial Fourier decomposition can be effective in modeling temperature data, particularly by omitting the cosine component. This approach simplifies the seasonal model while still accurately representing the cyclical nature of temperature changes. The sinusoidal term is often sufficient to describe seasonal temperature variations, making the model both interpretable and computationally efficient.
 
@@ -520,7 +555,7 @@ fit <- nls(Denoised ~ sin_component(NUM_DAY, a, b, alpha, theta),
 
 # Get coefficients and confidence intervals for the model
 params <- coef(fit)
-confint_fit <- confint(fit)
+confint_fit <- suppressMessages(confint(fit))
 
 temps$SEAS <- params["alpha"] * sin(omega * temps$NUM_DAY + params["theta"])
 temps$TREND <- params["a"] + params["b"] * temps$NUM_DAY
@@ -531,11 +566,9 @@ temps$RESID <-  temps$T_AVG - temps$TREND - temps$SEAS
 just to be certain i looked at if the residuals and the fitted values matched the $\overline T$ and $Residuals$ by checking percentage of same values as the rounding decimals increase The logic is that if the data sets are anything alike (like 2 different models results for the same dataset) you should see how far in the rounding are the data sets similar
 
 ```{r model_stats}
-cat("T_BAR VS fitted from the non linear squares \n")
-check_acc(temps$BAR, fitted(fit),15)
+check_acc(temps$BAR, fitted(fit),15, title = "T_BAR VS fitted from the non linear squares")
 
-cat("T_BAR VS fitted from the non linear squares \n")
-check_acc(temps$RESID, residuals(fit),15)
+check_acc(temps$RESID, residuals(fit),15, title = "T_BAR VS fitted from the non linear squares")
 ```
 
 ## Model performance
@@ -580,20 +613,22 @@ temps_xts <- temps %>%
 # Plot seasonal decomposition from Avg to residuals
 grid.arrange(nrow=5, top = paste0("Classical decomposition - last ",  lookback/365, " years"), 
             
-            temps_xts$T_AVG %>% 
-            quickplot(subtitle = "Average Temperature", show_legend = F, xlab = NULL, ylab = "Temps"),
+  temps_xts$T_AVG %>% 
+    quickplot(subtitle = "Average Temperature", show_legend = F, xlab = NULL, ylab = "Temps", 
+    type = geom_point, show_x = F),
 
-            temps_xts$Denoised %>% 
-            quickplot(subtitle = "Denoised", show_legend = F, xlab = NULL, ylab = "Temps"),
+  temps_xts$Denoised %>% 
+    quickplot(subtitle = "Denoised", show_legend = F, xlab = NULL, ylab = "Temps", 
+    type = geom_point, show_x = F),
 
-            temps_xts$TREND %>% 
-            quickplot(subtitle = "Trend", show_legend = F, xlab = NULL, ylab = "Temps"),
+  temps_xts$TREND %>% 
+    quickplot(subtitle = "Trend", show_legend = F, xlab = NULL, ylab = "Temps" , show_x = F),
 
-            temps_xts$SEAS %>% 
-            quickplot(subtitle = "Seasonal", show_legend = F, xlab = NULL, ylab = "Temps"), 
-            
-            temps_xts$RESID %>% 
-            quickplot(subtitle = "Residuals", show_legend = F, xlab = NULL, ylab = "Temps"))
+  temps_xts$SEAS %>% 
+    quickplot(subtitle = "Seasonal", show_legend = F, xlab = NULL, ylab = "Temps" , show_x = F), 
+
+  temps_xts$RESID %>% 
+    quickplot(subtitle = "Residuals", show_legend = F, xlab = NULL, ylab = "Temps"))
 
 # Plot original vs. fitted data
 ggplot(temps, aes(x = DAY)) +
@@ -942,7 +977,7 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3,
 
 ```{r Regime switch, fig.width= 9}
 #| warnings: False
-library(changepoint, quietly = T)
+library(changepoint, quietly = T, warn.conflicts = F)
 create_changepoint_plot <- function(n_breaks, x, y) {
   # Detect changepoints in variance with fixed number of breaks
   cp <- cpt.var(y, method = "PELT", Q = n_breaks)
@@ -965,15 +1000,17 @@ create_changepoint_plot <- function(n_breaks, x, y) {
     geom_line(aes(y = sd_fit), color = 'black', linewidth = 1) +
     ggtitle(paste("Breaks:", n_breaks, "\nRSS:", round(rss, 2))) +
     theme_classic() +
+    labs(y = NULL, x = NULL) +
     theme(plot.title = element_text(size = 10, face = "bold"))
 }
 # Create 9 plots for rhe breaks
 breaks <- c(1, 2, 4, 8, 10, 12, 20, 30, 40)
-plots <- lapply(breaks, create_changepoint_plot, x = x, y = y)
-grid.arrange(grobs = plots, nrow = 3, ncol = 3,
+plots <- suppressWarnings(lapply(breaks, create_changepoint_plot, x = x, y = y))
+
+suppressWarnings(grid.arrange(grobs = plots, nrow = 3, ncol = 3,
   left = "Standard deviation of temperatures",
   bottom = "Day of the year",
-  top = "Variance Regime Switching Models")
+  top = "Variance Regime Switching Models"))
 ```
 
 ```{r AR on vol_DOY}
@@ -1366,7 +1403,7 @@ This model doesn't really account for Volatility clustering, like how temperatur
 ## forecast seasonal plots
 
 ```{r ggforecast}
-ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::ggseasonplot()
+ts(data = temps$T_AVG, frequency = 12, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::ggseasonplot()
 ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagplot()
 ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagchull()
 
