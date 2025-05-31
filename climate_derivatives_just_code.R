@@ -1101,10 +1101,6 @@ ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+
 
 ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
 
-
-## beep ----
-beepr::beep(sound = 4)
-
 ## unnamed chunk ----
 # Assuming trading_dates and sim_length already defined
 x_vals <- as.numeric(trading_dates) - first_ord
@@ -1125,3 +1121,6 @@ data.frame(
   dTbar_vals = dTbar_vals,
   sigma_vals = sigma_vals
 ) %>% apply(2, normalize) %>% quickplot()
+
+## beep ----
+beepr::beep(sound = 4)
