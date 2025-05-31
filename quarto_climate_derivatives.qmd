@@ -27,7 +27,7 @@ format:
       keywords: [temperature, finance, Monte Carlo, R]
 toc: true
 toc-depth: 2
-# self-contained: true
+self-contained: true
 embed-resources: true
 number-sections: true
 lang: en
@@ -41,7 +41,7 @@ author:
 project:
   type: website
   output-dir: docs
-prefer-html: true
+prefer-html: true 
 ---
 
 # Weather Derivatives Temperature Options
@@ -88,19 +88,23 @@ Functions loaded from main
 
 ```{r functions_loaded, echo=FALSE}
 file <- "C:\\Users\\pietr\\OneDrive\\Desktop\\angolo in alto a destra\\quarto_climate_derivatives\\quarto_climate_derivatives.qmd"
-functions_loaded(file)
+when_rendering(functions_loaded(file))
 ```
 
 Packages required to run this file
 
-```{r required_packages}
-required_packages(file)
+```{r required_packages, echo=FALSE}
+when_rendering(required_packages(file))
 ```
 
 Functions defined in this document
 
 ```{r required_functions, echo=FALSE}
-required_functions(file)
+when_rendering(required_functions(file))
+```
+
+```{r github file, echo=FALSE}
+extract_r_code(file, "climate_derivatives_just_code.R")
 ```
 
 ```{r time info, echo=FALSE}
@@ -122,7 +126,7 @@ print(file.info(file)$mtime, "\n")
 
 3.  MANAGING CLIMATE RISK IN THE U.S. FINANCIAL SYSTEM, ISBN: 978-0-578-74841-2 (2020) \[[LINK](https://www.cftc.gov/sites/default/files/2020-09/9-9-20%20Report%20of%20the%20Subcommittee%20on%20Climate-Related%20Market%20Risk%20-%20Managing%20Climate%20Risk%20in%20the%20U.S.%20Financial%20System%20for%20posting.pdf)\]
 
-# Climate data download
+  # Climate data download
 
 Much of the weather market is dominated by temperature derivatives, aimed to protect the holder from unexpected temperature prints. The underlying used to trade these contracts is either Heating Degree Days (HDD) or Cooling Degree Days (CDD). For a specific day n, these can be defined as:
 
@@ -163,7 +167,7 @@ if (knitr::is_html_output()) {
     addTiles() %>% # Add default OpenStreetMap tiles
     addMarkers(~lon, ~lat, label = ~name, ) %>%
     addCircleMarkers(~lon, ~lat, radius = 10, color = "red", fillOpacity = 0.8) %>%
-    setView(lng = map_data$lon, lat = map_data$lat, zoom = 12)
+    setView(lng = map_data$lon, lat = map_data$lat, zoom = 9)
 } else {
   print("interactive map of disneyworld in the html version")
 }
@@ -1408,12 +1412,6 @@ ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*2+ la
 ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagchull()
 
 ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
-
-```
-
-```{r beep}
-#| include: False
-beepr::beep(sound = 4)
 ```
 
 ```{r}
@@ -1436,4 +1434,9 @@ data.frame(
   dTbar_vals = dTbar_vals,
   sigma_vals = sigma_vals
 ) %>% apply(2, normalize) %>% quickplot()
+```
+
+```{r beep}
+#| include: False
+beepr::beep(sound = 4)
 ```
