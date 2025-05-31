@@ -61,7 +61,7 @@ if (knitr::is_html_output()) {
     addTiles() %>% # Add default OpenStreetMap tiles
     addMarkers(~lon, ~lat, label = ~name, ) %>%
     addCircleMarkers(~lon, ~lat, radius = 10, color = "red", fillOpacity = 0.8) %>%
-    setView(lng = map_data$lon, lat = map_data$lat, zoom = 9)
+    setView(lng = map_data$lon, lat = map_data$lat, zoom = 10)
 } else {
   print("interactive map of disneyworld in the html version")
 }
