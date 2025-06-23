@@ -1,7 +1,7 @@
 #* AUTO-GENERATED STANDALONE R SCRIPT ----
 #* Generated from R Markdown file using extract_r_code()
 #* Source file: quarto_climate_derivatives.qmd
-#* Generated on: 2025-06-17 14:35:54.559799
+#* Generated on: 2025-06-23 18:09:27.361797
 
 #* REQUIRED PACKAGES ----
 #? If you don't have these packages, run: install.packages(c("caret", "dplyr", "fBasics", "ggplot2", "knitr", "MASS", "nlstools", "plotly", "rugarch", "tibble", "timeDate", "xts", "changepoint", "DT", "forecast", "gt", "leaflet", "mgcv", "NMOF", "quantmod", "splines", "tidyr", "timeSeries", "zoo", "colorspace", "e1071", "gganimate", "gtExtras", "lubridate", "nlme", "PerformanceAnalytics", "reshape2", "stats4", "tidyverse", "TTR", ""))
@@ -44,279 +44,9 @@ library(TTR)
 
 #* CUSTOM FUNCTIONS ----
 # Custom functions from main file
-check_acc <- function (data1, data2, n = 10, title = NULL, visual = c(TRUE, FALSE, "both")) 
-{
-    stopifnot(length(data1) == length(data2), is.numeric(data1), is.numeric(data2))
-    accuracy <- data.frame()
-    for (i in 0:n) {
-        new <- mean(round(data1, i) == round(data2, i), na.rm = TRUE)
-        accuracy <- rbind(accuracy, new)
-    }
-    colnames(accuracy) <- "values"
-    cor_val <- cor(data1, data2, use = "complete.obs")
-    mae_val <- mean(abs(data1 - data2), na.rm = TRUE)
-    mse_val <- mean((data1 - data2)^2, na.rm = TRUE)
-    diff_data <- data.frame(data1 = data1, data2 = data2) %>% head(5000) %>% mutate(index = index(.), diff = data1 - data2)
-    diff_range <- range(diff_data$diff, na.rm = TRUE)
-    diff_span <- diff_range[2] - diff_range[1]
-    y_limits <- if (diff_span < 1e-06) {
-        c(-1e-06, 1e-06)
-    }
-    else {
-        NULL
-    }
-    diff_plot <- ggplot(diff_data, aes(x = index, y = diff)) + geom_point(color = "darkred", size = 0.7) + labs(subtitle = "Difference", x = NULL, y = NULL) + coord_cartesian(ylim = y_limits)
-    accplot <- ggplot(accuracy, aes(x = 0:n, y = values)) + geom_line(linewidth = 1, color = "dodgerblue2") + geom_point(size = 2, color = "dodgerblue3") + scale_x_continuous(breaks = seq(0, n, by = 1)) + ylim(0, 1) + scale_y_continuous(labels = label_percent(), limits = c(0, 1)) + labs(subtitle = "Percentage of accuracy", y = NULL, x = "Rounding decimals")
-    plot <- data.frame(data1 = data1, data2 = data2) %>% head(5000) %>% ggplot(aes(x = index(data1))) + geom_point(aes(y = data1, color = "Data1"), size = 2) + geom_point(aes(y = data2, color = "Data2"), size = 2) + scale_color_manual(values = c(Data1 = "purple3", Data2 = "mediumseagreen"), name = NULL) + labs(title = "Visual inspection", y = NULL, x = NULL) + theme(legend.position = "bottom")
-    sum_df <- summary(data.frame(data1 = data1, data2 = data2))
-    full_df <- data.frame(accuracy[accuracy != 0] * 100) %>% round(2) %>% data.frame() %>% set_colnames("Values !=0 %")
-    if (visual[1] == TRUE) {
-        return(marrangeGrob(list(plot, diff_plot, accplot), layout_matrix = matrix(c(3, 3, 2, 2, 1, 1, 1, 1), nrow = 4, ncol = 2), top = title))
-    }
-    else if (visual[1] == FALSE) {
-        return(list(distance = data.frame(COR = cor_val, MAE = mae_val, MSE = mse_val), df = full_df, sum_df = sum_df))
-    }
-    else if (visual[1] == "both") {
-        return(list(plots = marrangeGrob(list(plot, diff_plot, accplot), layout_matrix = matrix(c(3, 3, 2, 2, 1, 1, 1, 1), nrow = 4, ncol = 2), top = title), df = full_df, sum_df = sum_df))
-    }
-}
-
-desc_df <- function (data, quantiles = c(0.01, 0.25, 0.75, 0.99), digits = 4) 
-{
-    summary_stats <- function(x) {
-        n <- sum(!is.na(x))
-        mean <- mean(x, na.rm = TRUE)
-        sd <- sd(x, na.rm = TRUE)
-        median <- median(x, na.rm = TRUE)
-        trimmed <- mean(x, trim = 0.1, na.rm = TRUE)
-        min <- min(x, na.rm = TRUE)
-        max <- max(x, na.rm = TRUE)
-        range <- max - min
-        skew <- sum((x - mean)^3, na.rm = TRUE)/(n * sd^3)
-        kurtosis <- sum((x - mean)^4, na.rm = TRUE)/(n * sd^4) - 3
-        se <- sd/sqrt(n)
-        percent_missing <- sum(is.na(x))/length(x) * 100
-        quantiles_values <- quantile(x, probs = quantiles, na.rm = TRUE)
-        c(n = n, mean = mean, sd = sd, median = median, trimmed = trimmed, min = min, max = max, range = range, skew = skew, kurtosis = kurtosis, se = se, `%NA` = percent_missing, Q = quantiles_values[1], Q = quantiles_values[2], Q = quantiles_values[3], Q = quantiles_values[4])
-    }
-    stats <- sapply(data, function(col) {
-        if (is.numeric(col)) 
-            summary_stats(col)
-        else rep(NA, length(summary_stats(0)))
-    })
-    as.data.frame(round(t(stats), digits = digits))
-}
-
-extract_r_code <- function (input_file, output_file, include_main = TRUE, source_path = "C:/Users/pietr/OneDrive/Desktop/formula.main.R") 
-{
-    lines <- readLines(input_file)
-    in_chunk <- FALSE
-    code_lines <- c()
-    in_self_function <- FALSE
-    self_function_start <- "^extract_r_code\\s*<-\\s*function\\b"
-    if (include_main) {
-        code_lines <- c(code_lines, "#* AUTO-GENERATED STANDALONE R SCRIPT ----", "#* Generated from R Markdown file using extract_r_code()", paste0("#* Source file: ", basename(input_file)), paste0("#* Generated on: ", Sys.time()), "")
-        tryCatch({
-            required_pkgs <- required_packages(input_file)
-            required_pkgs <- required_pkgs[!is.na(required_pkgs) & nzchar(trimws(required_pkgs)) & trimws(required_pkgs) != ""]
-            if (length(required_pkgs) > 0) {
-                code_lines <- c(code_lines, "#* REQUIRED PACKAGES ----", paste0("#? If you don't have these packages, run: install.packages(c(\"", paste(trimws(required_pkgs), collapse = "\", \""), "\"))"), "# Load required packages")
-                for (pkg in required_pkgs) {
-                  if (!is.na(pkg) && nzchar(trimws(pkg)) && trimws(pkg) != "") {
-                    code_lines <- c(code_lines, paste0("library(", trimws(pkg), ")"))
-                  }
-                }
-                code_lines <- c(code_lines, "")
-            }
-        }, error = function(e) {
-            code_lines <<- c(code_lines, "# Warning: Could not automatically detect required packages", "# Please manually add library() calls as needed", "")
-        })
-        tryCatch({
-            if (!exists("functions_loaded", mode = "function")) {
-                stop("functions_loaded() function not found. Please source your main R file first.")
-            }
-            used_functions <- functions_loaded(input_file, dataframe = FALSE)
-            cat("DEBUG: functions_loaded returned:", class(used_functions), "\n")
-            cat("DEBUG: functions_loaded returned:", class(used_functions), "\n")
-            if (is.null(used_functions)) {
-                cat("DEBUG: No custom functions detected in the file\n")
-            }
-            else if (length(used_functions) > 0) {
-                cat("DEBUG: Found", length(used_functions), "custom functions:", paste(used_functions, collapse = ", "), "\n")
-                code_lines <- c(code_lines, "#* CUSTOM FUNCTIONS ----", "# Custom functions from main file")
-                if (!file.exists(source_path)) {
-                  stop("Main R file not found at: ", source_path)
-                }
-                mainEnv <- new.env()
-                cat("DEBUG: Sourcing main file...\n")
-                source(source_path, local = mainEnv)
-                all_main_functions <- ls(envir = mainEnv)
-                all_main_functions <- all_main_functions[sapply(all_main_functions, function(x) is.function(get(x, envir = mainEnv)))]
-                cat("DEBUG: Functions available in main file:", paste(all_main_functions, collapse = ", "), "\n")
-                functions_added <- 0
-                for (func_name in used_functions) {
-                  cat("DEBUG: Processing function:", func_name, "\n")
-                  if (exists(func_name, envir = mainEnv)) {
-                    func_obj <- get(func_name, envir = mainEnv)
-                    if (!is.function(func_obj)) {
-                      cat("DEBUG: Warning -", func_name, "is not a function\n")
-                      next
-                    }
-                    func_text <- deparse(func_obj, width.cutoff = 500)
-                    code_lines <- c(code_lines, paste0(func_name, " <- ", paste(func_text, collapse = "\n")), "")
-                    functions_added <- functions_added + 1
-                    cat("DEBUG: Successfully added function:", func_name, "\n")
-                  }
-                  else {
-                    cat("DEBUG: Warning - function", func_name, "not found in main environment\n")
-                  }
-                }
-                cat("DEBUG: Total functions added:", functions_added, "\n")
-            }
-        }, error = function(e) {
-            cat("ERROR in custom function extraction:", e$message, "\n")
-            code_lines <<- c(code_lines, paste0("# Warning: Could not automatically extract custom functions"), paste0("# Error: ", e$message), "# Please manually add function definitions as needed", "")
-        })
-        code_lines <- c(code_lines, "#* MAIN CODE ----", "")
-    }
-    for (line in lines) {
-        if (grepl(self_function_start, line)) {
-            in_self_function <- TRUE
-        }
-        if (in_self_function && grepl("^\\s*}\\s*$", line)) {
-            in_self_function <- FALSE
-            next
-        }
-        if (in_self_function) {
-            next
-        }
-        if (include_main && (grepl("^\\s*(library|require)\\s*\\(", line) || grepl("^\\s*source\\s*\\(", line) || grepl("extract_r_code.*\\(", line))) {
-            next
-        }
-        if (!in_chunk && grepl("^#{1,6} ", line)) {
-            heading <- sub("^#+\\s+", "", line)
-            code_lines <- c(code_lines, "", paste0("#* ", heading, " ----"))
-        }
-        else if (grepl("^```\\{r", line)) {
-            in_chunk <- TRUE
-            chunk_label <- sub("^```\\{r\\s*([^,}]*)?.*", "\\1", line)
-            chunk_label <- trimws(chunk_label)
-            label_line <- if (nzchar(chunk_label)) {
-                paste0("## ", chunk_label, " ----")
-            }
-            else {
-                "## unnamed chunk ----"
-            }
-            code_lines <- c(code_lines, "", label_line)
-        }
-        else if (grepl("^```", line) && in_chunk) {
-            in_chunk <- FALSE
-        }
-        else if (in_chunk) {
-            if (!grepl("^#\\|", line)) {
-                code_lines <- c(code_lines, line)
-            }
-        }
-    }
-    writeLines(code_lines, output_file)
-    cat("Standalone R script created successfully!\n")
-    cat("Output file:", output_file, "\n")
-    if (include_main) {
-        cat("Dependencies automatically included.\n")
-    }
-}
-
-find_outliers <- function (x, yes = 1, no = 0) 
-{
-    Q1 <- quantile(x, 0.25, na.rm = TRUE)
-    Q3 <- quantile(x, 0.75, na.rm = TRUE)
-    IQR <- Q3 - Q1
-    lower_bound <- Q1 - 2 * IQR
-    upper_bound <- Q3 + 2 * IQR
-    df <- numeric(length(x))
-    df <- data.frame(ifelse(x < lower_bound | x > upper_bound, yes = yes, no = no)) %>% na.fill(fill = 0)
-    return(df)
-}
-
-normalize <- function (x, peak = 100) 
-{
-    MAX <- max(x, na.rm = TRUE)
-    df <- (x/MAX) * peak
-    return(df)
-}
-
-quickplot <- function (data, title = NULL, plot_engine = c("ggplot", "plotly"), xlab = "Date", ylab = "Value", show_legend = TRUE, subtitle = NULL, caption = NULL, linewidth = 0.4, legend_name = "Variable", legend_position = c("right", "left", "bottom", "top"), alpha = 1, type = geom_line, facet_wrap = FALSE, x_size = 1, x_start = 1, x_step = 1, show_x = TRUE) 
-{
-    plot_data <- data.frame(Date = index(data), data)
-    custom_palette <- rep(c("firebrick", "darkblue", "#006400", "gray30", "#457575", "#6100a8", "orange2", "brown", "#483D8B", "#556B2F", "#8B008B", "#5F9EA0", "#6B8E23", "#9932CC"), 1000)
-    my_data_long <- pivot_longer(data = plot_data, cols = -Date, names_to = "Variable", values_to = "Value")
-    if (class(data)[1] != "xts") {
-        my_data_long$Date <- my_data_long$Date/x_size
-    }
-    if (x_start != 1) {
-        my_data_long$Date <- my_data_long$Date + x_start
-    }
-    plot <- ggplot(my_data_long, aes(x = Date, y = Value, color = Variable)) + type(linewidth = linewidth, alpha = alpha) + labs(title = title, subtitle = subtitle, caption = caption, x = xlab, y = ylab) + scale_color_manual(name = legend_name, values = custom_palette) + theme(legend.position = legend_position[1], plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
-    if (!show_legend) {
-        plot <- plot + theme(legend.position = "none")
-    }
-    if (!show_x) {
-        plot <- plot + theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())
-    }
-    if (facet_wrap) {
-        plot <- plot + facet_wrap(~Variable)
-        return(plot)
-    }
-    final_plot <- switch(plot_engine[1], ggplot = plot, plotly = ggplotly(plot) %>% layout(xaxis = list(rangeslider = list(visible = TRUE, thickness = 0.08)), yaxis = list(fixedrange = FALSE), dragmode = "zoom"))
-    return(final_plot)
-}
-
-remove_outliers <- function (x, fill = c("mean", "median", "NA", "zero"), min = 0.25, max = 0.75) 
-{
-    Q1 <- quantile(x, min, na.rm = TRUE)
-    Q3 <- quantile(x, max, na.rm = TRUE)
-    IQR <- Q3 - Q1
-    lower_bound <- Q1 - 2 * IQR
-    upper_bound <- Q3 + 2 * IQR
-    rep <- switch(fill[1], mean = mean(x, na.rm = TRUE), median = median(x, na.rm = TRUE), `NA` = NA, zero = 0)
-    x[x < lower_bound | x > upper_bound] <- rep
-    return(x)
-}
-
-RSS <- function (y, y_pred) 
-{
-    sum((y - y_pred)^2)
-}
-
-show_df <- function (prices, n = 5, rounding = Inf, name_first_col = "DATE") 
-{
-    price_date <- cbind(index(prices), smart_round(data.frame(prices), rounding))
-    colnames(price_date) <- (c(name_first_col, colnames(prices)))
-    rownames(price_date) <- (1:length(index(prices)))
-    first_rows <- head(price_date, n)
-    last_rows <- tail(price_date, n)
-    separator <- matrix(NA, nrow = 1, ncol = ncol(price_date))
-    colnames(separator) <- (c(name_first_col, colnames(prices)))
-    summary_table <- bind_rows(first_rows, as.data.frame(separator), last_rows)
-    return(summary_table)
-}
-
-smart_round <- function (df, digits = 2) 
-{
-    mutate(df, across(where(is.numeric), round, digits = digits))
-}
-
-when_rendering <- function (action) 
-{
-    doc_fmt <- knitr::opts_knit$get("rmarkdown.pandoc.to")
-    render_status <- knitr::is_latex_output() || knitr::is_html_output() || (!is.null(doc_fmt) && doc_fmt %in% c("docx", "pdf", "pptx", "epub", "markdown", "gfm", "odt", "beamer"))
-    if (render_status) {
-        return(action)
-    }
-    else {
-        return("document is not rendering")
-    }
-}
+# Warning: Could not automatically extract custom functions
+# Error: first argument has length > 1
+# Please manually add function definitions as needed
 
 #* MAIN CODE ----
 
@@ -348,7 +78,7 @@ rm(dff)
 
 ## functions_loaded ----
 file <- "C:\\Users\\pietr\\OneDrive\\Desktop\\angolo in alto a destra\\quarto_climate_derivatives\\quarto_climate_derivatives.qmd"
-when_rendering(functions_loaded(file))
+when_rendering(functions_loaded(file, return_definitions = T))
 
 ## required_packages ----
 when_rendering(required_packages(file))
@@ -439,7 +169,7 @@ plot1 <- cleandataset %>%
 plot1
 
 ## last yrs ----
-NDAYS <- nrow(cleandataset)
+NDAYS <- nrow(DATASET)
 lookback <- 365*10
 
 tail(cleandataset, lookback) %>% 
@@ -544,7 +274,6 @@ t_data %>%
   labs(x = NULL,
       y = NULL,
       title = "Global temperature change (1981-2025)")
-
 
 #* Seasonal analysis ----
 
@@ -664,11 +393,11 @@ fit <- nls(Denoised ~ sin_component(NUM_DAY, a, b, alpha, theta),
 broom::tidy(fit)
 
 # Get coefficients and confidence intervals for the model
-params <- coef(fit)
+fit_params <- coef(fit)
 confint_fit <- suppressMessages(confint(fit))
 
-temps$SEAS <- params["alpha"] * sin(omega * temps$NUM_DAY + params["theta"])
-temps$TREND <- params["a"] + params["b"] * temps$NUM_DAY
+temps$SEAS <- fit_params["alpha"] * sin(omega * temps$NUM_DAY + fit_params["theta"])
+temps$TREND <- fit_params["a"] + fit_params["b"] * temps$NUM_DAY
 temps$BAR <- temps$TREND + temps$SEAS
 temps$RESID <-  temps$T_AVG - temps$TREND - temps$SEAS
 
@@ -679,8 +408,8 @@ check_acc(temps$BAR, fitted(fit),15, title = "T_BAR VS fitted from the non linea
 
 ## performance ----
 # Print Model 
-for (i in 1:length(params)) {
-  cat(names(params)[i], ": ", round(params[i], 3), 
+for (i in 1:length(fit_params)) {
+  cat(names(fit_params)[i], ": ", round(fit_params[i], 3), 
       " CI ~normally [", round(confint_fit[i, 1], 3), ",", round(confint_fit[i, 2], 3), "]\n")
   }
 
@@ -689,7 +418,7 @@ cat("  RSS model sine curve:", round(RSS(temps$T_AVG, temps$BAR), 2), "\n")
 cat("  MAE model fit:", round(MAE(temps$BAR, temps$T_AVG), 2), "\n")
 
 # fix the trend by using the linear trend
-temps$Trend <- temps$Trend %>% na.fill(params["a"] + params["b"] * 1:lookback)
+temps$Trend <- temps$Trend %>% na.fill(fit_params["a"] + fit_params["b"] * 1:lookback)
 
 #* Visualization of results ----
 
@@ -737,23 +466,23 @@ ggplot(temps, aes(x = DAY)) +
 
 ## Time degrad ----
 grid.arrange(nrow = 2, ncol = 2,
-ggplot(temps %>% head(lookback), aes(x = DAY)) +
-  geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
-  geom_line(aes(y = BAR), color = 'orange', linewidth=2) +
-  labs(title = paste0("Temperature Model Fit (First ", lookback/365, " years)"),x=NULL, y = NULL),
+  ggplot(temps %>% head(lookback), aes(x = DAY)) +
+    geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
+    geom_line(aes(y = BAR), color = 'orange', linewidth=2) +
+    labs(title = paste0("Temperature Model Fit (First ", lookback/365, " years)"),x=NULL, y = NULL),
 
-ggplot(temps %>% head(lookback), aes(x = DAY)) +
-  geom_line(aes(y = RESID), color = 'black', linewidth=0.5) +
-  labs(title = paste0("Residuals (First ", lookback/365, " years)"),x=NULL, y = NULL),
+  ggplot(temps %>% head(lookback), aes(x = DAY)) +
+    geom_line(aes(y = RESID), color = 'black', linewidth=0.5) +
+    labs(title = paste0("Residuals (First ", lookback/365, " years)"),x=NULL, y = NULL),
 
-ggplot(temps %>% tail(lookback), aes(x = DAY)) +
-  geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
-  geom_line(aes(y = BAR), color = 'orange', linewidth=2) +
-  labs(title = paste0("Temperature Model Fit (Last ", lookback/365, " years)"), x=NULL, y = NULL),
+  ggplot(temps %>% tail(lookback), aes(x = DAY)) +
+    geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
+    geom_line(aes(y = BAR), color = 'orange', linewidth=2) +
+    labs(title = paste0("Temperature Model Fit (Last ", lookback/365, " years)"), x=NULL, y = NULL),
 
-ggplot(temps %>% tail(lookback), aes(x = DAY)) +
-  geom_line(aes(y = RESID), color = 'black', linewidth=0.5) +
-  labs(title = paste0("Residuals (Last ", lookback/365, " years)"),x=NULL, y = NULL)
+  ggplot(temps %>% tail(lookback), aes(x = DAY)) +
+    geom_line(aes(y = RESID), color = 'black', linewidth=0.5) +
+    labs(title = paste0("Residuals (Last ", lookback/365, " years)"),x=NULL, y = NULL)
 )
 
 #* Residuals analysis and diagnostics ----
@@ -794,8 +523,11 @@ ggplot(temps, aes(x = RESID)) +
 
 ## OU2 ----
 temps_OU <- temps
+ar_fit <- arima(temps_OU$RESID, order = c(1,0,0))
+checkresiduals(ar_fit)
+
 # Define parameters for the OU process
-kappa <- 1-arima(temps_OU$RESID, order = c(1,0,0))$coef[1]  # Mean-reversion rate
+kappa <- as.double(1-ar_fit$coef[1])  # Mean-reversion rate
 sigma <- 0.1                                                # Volatility of the process
 dt <- 1                                                     # Time step (daily data)
 
@@ -1095,10 +827,10 @@ summary(ar_model)
 #* Montecarlo simulations ----
 
 ## full final model ----
-a <- params[1]
-b <- params[2]
-theta <- atan2(params[3], params[4])
-alpha <- sqrt(params[3]^2 + params[4]^2)
+a <- fit_params[1]
+b <- fit_params[2]
+theta <- atan2(fit_params[3], fit_params[4])
+alpha <- sqrt(fit_params[3]^2 + fit_params[4]^2)
 kappa <- as.double(kappa)
 
 data.frame(a = a, b = b, theta = theta, alpha = alpha, kappa = kappa)
@@ -1124,14 +856,14 @@ if (inherits(temps$DAY, "Date")) {
 }
 
 # 3. Apply Model with Given Parameters
-Tbar_params <- list(a = a, b = b, alpha = alpha, theta = theta)
+Tbar_fit_params <- list(a = a, b = b, alpha = alpha, theta = theta)
 
 temps$model_fit <- T_model(
   temp_t$ordinal - first_ord,
-  Tbar_params$a,
-  Tbar_params$b,
-  Tbar_params$alpha,
-  Tbar_params$theta
+  Tbar_fit_params$a,
+  Tbar_fit_params$b,
+  Tbar_fit_params$alpha,
+  Tbar_fit_params$theta
 )
 
 grid.arrange(
@@ -1201,7 +933,7 @@ euler_step <- function(row, kappa, M) {
   T_det + T_mrev + sigma
 }
 
-monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model, 
+monte_carlo_temp <- function(trading_dates, Tbar_fit_params, vol_model, 
                             first_ord, M = 1, kappa = 0.2430516) {
   # Convert dates to numeric if needed
   if (inherits(trading_dates, "Date")) {
@@ -1213,11 +945,11 @@ monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model,
 
   # Calculate Tbar and dTbar
   x_vals <- trading_numeric - first_ord
-  Tbars <- T_model(x_vals, Tbar_params$a, Tbar_params$b, 
-                    Tbar_params$alpha, Tbar_params$theta)
+  Tbars <- T_model(x_vals, Tbar_fit_params$a, Tbar_fit_params$b, 
+                    Tbar_fit_params$alpha, Tbar_fit_params$theta)
 
-  dTbars <- dT_model(x_vals, Tbar_params$a, Tbar_params$b, 
-                    Tbar_params$alpha, Tbar_params$theta)
+  dTbars <- dT_model(x_vals, Tbar_fit_params$a, Tbar_fit_params$b, 
+                    Tbar_fit_params$alpha, Tbar_fit_params$theta)
 
   # Create simulation dataframe
   mc_temps <- data.frame(
@@ -1251,7 +983,7 @@ monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model,
 trading_dates <- seq(as.Date("2022-09-01"), as.Date("2025-08-31"), by = "day")
 sim_results <- monte_carlo_temp(
   trading_dates,
-  Tbar_params,
+  Tbar_fit_params,
   volatility,
   first_ord,
   M = 5
@@ -1275,8 +1007,8 @@ trading_dates_winter <- as.Date("2025-4-01")
 trading_dates_summer <- as.Date("2025-10-01")
 
 # Run simulations
-sim_results_winter <- monte_carlo_temp(trading_dates_winter, Tbar_params, volatility, first_ord, M = no_sims)
-sim_results_summer <- monte_carlo_temp(trading_dates_summer, Tbar_params, volatility, first_ord, M = no_sims)
+sim_results_winter <- monte_carlo_temp(trading_dates_winter, Tbar_fit_params, volatility, first_ord, M = no_sims)
+sim_results_summer <- monte_carlo_temp(trading_dates_summer, Tbar_fit_params, volatility, first_ord, M = no_sims)
 
 # Extract results
 mc_sims_winter <- sim_results_winter$mc_sims %>% select(-Date)
@@ -1322,6 +1054,66 @@ for (n in 16:35) {
   prob_no_payout <- mean(payoffs == 0) * 100
   cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
 }
+
+## unnamed chunk ----
+
+# Load and prepare observed data
+june_data <- read.csv("Forecast.csv", skip = 10) %>%
+  mutate(T_AVG = (T2M_MAX + T2M_MIN)/2,
+         DAY = as.Date(DOY - 1, origin = paste0(YEAR, "-01-01"))) %>%
+  select(T2M_MAX, T2M_MIN, T_AVG, DAY)
+
+# Improved seasonal trend model with harmonics
+model_formula <- function(t, a, b, a1, b1, a2, b2) {
+  omega <- 2 * pi / 365.25
+  a + b * t +
+    a1 * cos(omega * t) + b1 * sin(omega * t) +
+    a2 * cos(2 * omega * t) + b2 * sin(2 * omega * t)
+}
+
+# Fit model to get parameters
+fit <- nls(T_AVG ~ model_formula(NUM_DAY, a, b, a1, b1, a2, b2),
+            data = temps,
+            start = list(a = 20, b = 0, a1 = 5, b1 = 5, a2 = 3, b2 = 3))
+
+fit_params <- coef(fit)
+temps$TREND <- model_formula(temps$NUM_DAY, fit_params["a"], fit_params["b"], fit_params["a1"], 
+                              fit_params["b1"], fit_params["a2"], fit_params["b2"])
+temps$RESID <- temps$T_AVG - temps$TREND
+
+# Fit ARIMA to residuals
+res_model <- auto.arima(temps$RESID, seasonal = TRUE)
+
+# Forecast horizon
+forecast_N <- 30
+future_dates <- seq(max(temps$DAY) + 1, by = "day", length.out = forecast_N)
+future_t <- as.numeric(future_dates - min(temps$DAY))
+
+# Forecast residuals
+res_forecast <- forecast(res_model, h = forecast_N)
+
+# Final temperature forecast = trend + residuals
+trend_forecast <- model_formula(future_t, fit_params["a"], fit_params["b"], fit_params["a1"], 
+                                fit_params["b1"], fit_params["a2"], fit_params["b2"])
+temp_forecast <- trend_forecast + res_forecast$mean
+
+# Build final forecast dataframe with proper CI
+forecast_df <- tibble(
+  Date = future_dates,
+  Temperature = temp_forecast,
+  Lower = trend_forecast + res_forecast$lower[, 2],  # 95% CI
+  Upper = trend_forecast + res_forecast$upper[, 2]
+)
+
+# Plot
+ggplot() +
+  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG), color = "black") +
+  geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
+  geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2, fill = "grey") +
+  geom_line(data = june_data, aes(x = DAY, y = T_AVG), color = "blue") +
+  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") +
+  theme_minimal()
+
 
 #* Sidequests ----
 
@@ -1415,12 +1207,19 @@ model_formula <- function(t, a, b, a1, b1) {
   a + b * t + a1 * cos(omega * t) + b1 * sin(omega * t)
 }
 
+june_data <- read.csv("Forecast.csv", skip = 10) %>% 
+  mutate(T_AVG = (T2M_MAX + T2M_MIN)/2) %>% 
+  mutate(DAY = as.Date(DOY - 1, origin = paste0(YEAR, "-01-01"))) %>% 
+  select(T2M_MAX, T2M_MIN, T_AVG, DAY)
+
 forecast_N <- 30
 new_t <- max(temps$NUM_DAY) + forecast_N  # forecast_N days after last observation
-predicted_T <- model_formula(new_t, params["a"], params["b"], params["alpha"], params["theta"])
+predicted_T <- model_formula(new_t, fit_params["a"], fit_params["b"], fit_params["alpha"], fit_params["theta"])
 cat("predicted temperature for", as.character(max(temps$DAY)+forecast_N), "=", predicted_T)
 
-arima_model <- Arima(temps$RESID, order = c(2, 0, 0), include.mean = FALSE)
+# arima_model <- Arima(temps$RESID, order = c(2, 0, 0), include.mean = FALSE)
+arima_model <- auto.arima(temps$RESID, seasonal = TRUE)
+
 future_residuals <- forecast(arima_model, h = forecast_N)  # forecast_N steps ahead
 
 first_date <- min(temps$DAY)
@@ -1428,7 +1227,7 @@ future_dates <- seq(max(temps$DAY), by = "day", length.out = forecast_N)
 future_t <- as.numeric(difftime(future_dates, first_date, units = "days"))
 
 # Deterministic part
-deterministic_part <- model_formula(future_t, params["a"], params["b"], params["alpha"], params["theta"])
+deterministic_part <- model_formula(future_t, fit_params["a"], fit_params["b"], fit_params["alpha"], fit_params["theta"])
 
 # Stochastic part (residuals)
 stochastic_part <- future_residuals$mean
@@ -1439,17 +1238,21 @@ future_T <- deterministic_part + stochastic_part
 forecast_df <- data.frame(
   Date = future_dates,
   Temperature = future_T,
-  Lower = future_T - 1.96 * future_residuals$mean,  # 95% CI
-  Upper = future_T + 1.96 * future_residuals$mean
+  # Lower = future_T - 1.96 * future_residuals$mean,  # 95% CI
+  # Upper = future_T + 1.96 * future_residuals$mean,
+  Lower = future_T + future_residuals$lower[, 2],  # 95% lower
+  Upper = future_T + future_residuals$upper[, 2]  # 95% upper
+
 )
 
 ggplot() +
   geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG)) +
   geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
   geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2) +
+  geom_line(data = june_data, aes(x = DAY, y = T_AVG), color = "blue")+
   labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") 
 
-#* forecast seasonal plots ----
+#* Forecast seasonal plots ----
 
 ## ggforecast ----
 ts(data = temps$T_AVG, frequency = 12, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::ggseasonplot()
@@ -1478,6 +1281,23 @@ data.frame(
   dTbar_vals = dTbar_vals,
   sigma_vals = sigma_vals
 ) %>% apply(2, normalize) %>% quickplot()
+
+#* GARCH  ----
+
+## unnamed chunk ----
+
+spec <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(2, 0), include.mean = FALSE),
+  distribution.model = "norm"
+)
+
+GARCH_fit <- ugarchfit(spec, temps$RESID)
+
+graphics::layout(mat = matrix(c(1, 2, 3, 3), nrow = 2, byrow = T))
+plot(GARCH_fit, which = 1, plot = F)
+plot(GARCH_fit, which = 4)
+plot(GARCH_fit, which = 3)
 
 ## beep ----
 beepr::beep(sound = 4)
