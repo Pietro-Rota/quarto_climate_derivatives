@@ -1,7 +1,7 @@
 #* AUTO-GENERATED STANDALONE R SCRIPT ----
 #* Generated from R Markdown file using extract_r_code()
 #* Source file: quarto_climate_derivatives.qmd
-#* Generated on: 2025-06-23 18:09:27.361797
+#* Generated on: 2025-07-02 18:00:12.350223
 
 #* REQUIRED PACKAGES ----
 #? If you don't have these packages, run: install.packages(c("caret", "dplyr", "fBasics", "ggplot2", "knitr", "MASS", "nlstools", "plotly", "rugarch", "tibble", "timeDate", "xts", "changepoint", "DT", "forecast", "gt", "leaflet", "mgcv", "NMOF", "quantmod", "splines", "tidyr", "timeSeries", "zoo", "colorspace", "e1071", "gganimate", "gtExtras", "lubridate", "nlme", "PerformanceAnalytics", "reshape2", "stats4", "tidyverse", "TTR", ""))
@@ -1007,8 +1007,20 @@ trading_dates_winter <- as.Date("2025-4-01")
 trading_dates_summer <- as.Date("2025-10-01")
 
 # Run simulations
-sim_results_winter <- monte_carlo_temp(trading_dates_winter, Tbar_fit_params, volatility, first_ord, M = no_sims)
-sim_results_summer <- monte_carlo_temp(trading_dates_summer, Tbar_fit_params, volatility, first_ord, M = no_sims)
+sim_results_winter <- monte_carlo_temp(
+  trading_dates_winter,
+  Tbar_fit_params,
+  volatility,
+  first_ord,
+  M = no_sims
+)
+sim_results_summer <- monte_carlo_temp(
+  trading_dates_summer,
+  Tbar_fit_params,
+  volatility,
+  first_ord,
+  M = no_sims
+)
 
 # Extract results
 mc_sims_winter <- sim_results_winter$mc_sims %>% select(-Date)
@@ -1018,7 +1030,7 @@ Tbar_summer <- sim_results_summer$mc_temps$Tbar[1]
 Tbar_winter <- sim_results_winter$mc_temps$Tbar[1]
 
 # Create combined data frame for plotting
-plot_data <- bind_rows(
+plot_data <- rbind(
   data.frame(Temperature = unlist(mc_sims_summer), Season = "Summer"),
   data.frame(Temperature = unlist(mc_sims_winter), Season = "Winter")
 )
@@ -1026,16 +1038,26 @@ plot_data <- bind_rows(
 # Create the plot
 ggplot(plot_data, aes(x = Temperature, fill = Season)) +
   geom_histogram(position = "identity", alpha = 0.9, bins = 80) +
-  geom_vline(aes(xintercept = Tbar_winter), color = darken("steelblue",0.3),
-              linewidth = 2, linetype = "solid") +
-  geom_vline(aes(xintercept = Tbar_summer), color = darken("orange",0.3),
-              linewidth = 2, linetype = "solid") +
-  scale_fill_manual(values = c(Winter="steelblue", Summer="orange")) +
-  labs(title = "Winter vs Summer Temperature MC Sims",
-        x = "Temperature (°C)", 
-        y = "Frequency") +
+  geom_vline(aes(xintercept = Tbar_winter), color = darken("steelblue", 0.3), linewidth = 2, linetype = "solid") +
+  geom_vline(aes(xintercept = Tbar_summer), color = darken("orange", 0.3), linewidth = 2, linetype = "solid") +
+  scale_fill_manual(values = c(Winter = "steelblue", Summer = "orange")) +
+  labs(title = "Winter vs Summer Temperature MC Sims", x = "Temperature (°C)", y = "Frequency") +
   theme_minimal() +
   theme(legend.position = "bottom")
+
+
+# Create the plot
+ggplot(plot_data, aes(x = Temperature, fill = Season)) +
+  geom_histogram(position = "identity", alpha = 0.9, bins = 80) +
+  geom_freqpoly(data=winter_dataset, aes(x = T_AVG, y = after_stat(count*10), color = "Hist Winter"),  bins = 80, linewidth = 2)+
+  geom_freqpoly(data=summer_dataset, aes(x = T_AVG, y = after_stat(count*10), color = "Hist Summer"),  bins = 80, linewidth = 2)+
+  geom_vline(aes(xintercept = Tbar_winter), color = darken("steelblue", 0.3), linewidth = 2, linetype = "solid") +
+  geom_vline(aes(xintercept = Tbar_summer), color = darken("orange", 0.3), linewidth = 2, linetype = "solid") +
+  scale_fill_manual(values = c(Winter = "steelblue", Summer = "orange")) +
+  scale_color_manual(name = NULL, values = c("Hist Winter" = "navy", "Hist Summer" = "darkorange")) +
+  labs(title = "Comparison of both historical and simulated", x = "Temperature (°C)", y = "Simulated Frequency") +
+  theme(legend.position = "bottom") +
+  scale_y_continuous(name = "Frequency", sec.axis = sec_axis(~ . * 0.07, name = "Historical Frequency"))
 
 ## unnamed chunk ----
 prob_sim_summer <- as.numeric(sim_results_summer$mc_sims[-1])
@@ -1183,7 +1205,7 @@ THISYEAR <- data.frame(
   c(DATASET[DATASET$YEAR == 2024, ]["T_MIN"])
 )
 
-cbind(pivot_df,
+plot <- cbind(pivot_df,
       "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
       "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
       "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)) %>%
@@ -1198,6 +1220,8 @@ cbind(pivot_df,
                                                 MIN_Current = "lightblue", MAX_Current = "indianred")) +
   labs(title = "Is this year hotter on average?", y = NULL, x = NULL)+
   theme(legend.position = "bottom")
+
+suppressWarnings(print(plot))
 
 #* Sidequest: predicting temperatures in the future ----
 
