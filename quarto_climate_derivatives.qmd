@@ -46,9 +46,7 @@ prefer-html: true
 
 # Weather Derivatives Temperature Options
 
-::: {.content-visible html}
 **Last updated:** `r Sys.Date()`
-:::
 
 ```{r setup}
 #| title: setup
@@ -126,7 +124,7 @@ print(file.info(file)$mtime, "\n")
 
 3.  MANAGING CLIMATE RISK IN THE U.S. FINANCIAL SYSTEM, ISBN: 978-0-578-74841-2 (2020) \[[LINK](https://www.cftc.gov/sites/default/files/2020-09/9-9-20%20Report%20of%20the%20Subcommittee%20on%20Climate-Related%20Market%20Risk%20-%20Managing%20Climate%20Risk%20in%20the%20U.S.%20Financial%20System%20for%20posting.pdf)\]
 
-  # Climate data download
+\# Climate data download
 
 Much of the weather market is dominated by temperature derivatives, aimed to protect the holder from unexpected temperature prints. The underlying used to trade these contracts is either Heating Degree Days (HDD) or Cooling Degree Days (CDD). For a specific day n, these can be defined as:
 
@@ -467,8 +465,7 @@ runSD(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term
 
 The first step in pricing temperature options is to decompose the time series into distinct components that each represent different underlying patterns. This process is essential for understanding the structure of the data and for developing predictive models. In basic temrs it can be expressed as the sum of three main components:$y_t=T_t+S_t+e_t$, Here, $T_t$ is the trend component that captures the long-term movement, $S_t$ represents the seasonal variations (periodic patterns), and $e_t$ refers to the residuals or noise in the data.
 
-which in our case becomes 
-$$
+which in our case becomes $$
 \overline{T_t} = T_{trend} + T_{seasonal}+ Residuals
 $$
 
@@ -484,7 +481,6 @@ The trend component could be as simple as a straight line or a moving average
 
 This form captures the cyclical nature of temperature changes throughout the year, like daily or annual temperature fluctuations.
 
-
 $$
 T_{seasonal} = \alpha \cdot \sin(\omega \cdot t + \theta)
 $$
@@ -495,7 +491,7 @@ $$
 
 -   $\theta$ is the phase shift
 
-And lastly the residuals are just: 
+And lastly the residuals are just:
 
 $$
 Residuals = T_t - T_{trend} + T_{seasonal}
@@ -1258,6 +1254,124 @@ ggplot(plot_data, aes(x = Temperature, fill = Season)) +
         y = "Frequency") +
   theme_minimal() +
   theme(legend.position = "bottom")
+
+
+# Create the plot
+ggplot(plot_data, aes(x = Temperature, fill = Season)) +
+  geom_histogram(position = "identity", alpha = 0.9, bins = 80) +
+  geom_freqpoly(data=winter_dataset, aes(x = T_AVG, y = after_stat(count*10), color = "Hist Winter"),  bins = 80, linewidth = 2)+
+  geom_freqpoly(data=summer_dataset, aes(x = T_AVG, y = after_stat(count*10), color = "Hist Summer"),  bins = 80, linewidth = 2)+
+  geom_vline(aes(xintercept = Tbar_winter), color = darken("steelblue", 0.3), linewidth = 2, linetype = "solid") +
+  geom_vline(aes(xintercept = Tbar_summer), color = darken("orange", 0.3), linewidth = 2, linetype = "solid") +
+  scale_fill_manual(values = c(Winter = "steelblue", Summer = "orange")) +
+  scale_color_manual(name = NULL, values = c("Hist Winter" = "navy", "Hist Summer" = "darkorange")) +
+  labs(title = "Comparison of both historical and simulated", x = "Temperature (°C)", y = "Simulated Frequency") +
+  theme(legend.position = "bottom") +
+  scale_y_continuous(name = "Frequency", sec.axis = sec_axis(~ . * 0.07, name = "Historical Frequency"))
+```
+
+Florida's weather is rather temperate, so, we need to actually structure a contract that makes sense, generally the 18 degrees used is way too low for summers in a climate like florida as the lowest point simulated is `r round(min(as.numeric(sim_results_summer$mc_sims[-1])),2)`
+
+So we need to cmpute the probability that the option does not pay out (i.e., temperature Tn stays above 18°C).
+
+The probability is calculated as by counting how many simulated paths had $Tn$ ≥ 18°C where no payout would occur.
+
+```{r}
+prob_sim_summer <- as.numeric(sim_results_summer$mc_sims[-1])
+
+for (n in 16:35) {
+  payoffs <- ifelse(prob_sim_summer >= n, 0, n - prob_sim_summer)
+  prob_no_payout <- mean(payoffs == 0) * 100
+  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
+}
+```
+
+conversely in the winter has a much flatter distribution so its harded to figure out a good balance 
+
+```{r}
+prob_sim_winter <- as.numeric(sim_results_winter$mc_sims[-1])
+
+for (n in 16:35) {
+  payoffs <- ifelse(prob_sim_winter <= n, 0, n - prob_sim_winter)
+  prob_no_payout <- mean(payoffs == 0) * 100
+  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
+}
+```
+
+```{r}
+library(lubridate)
+
+# Load and prepare observed data
+june_data <- read.csv("Forecast.csv", skip = 10) %>%
+  mutate(T_AVG = (T2M_MAX + T2M_MIN)/2,
+         DAY = as.Date(DOY - 1, origin = paste0(YEAR, "-01-01"))) %>%
+  select(T2M_MAX, T2M_MIN, T_AVG, DAY)
+
+# Improved seasonal trend model with harmonics
+model_formula <- function(t, a, b, a1, b1, a2, b2) {
+  omega <- 2 * pi / 365.25
+  a + b * t +
+    a1 * cos(omega * t) + b1 * sin(omega * t) +
+    a2 * cos(2 * omega * t) + b2 * sin(2 * omega * t)
+}
+
+# Fit model to get parameters
+fit <- nls(T_AVG ~ model_formula(NUM_DAY, a, b, a1, b1, a2, b2),
+            data = temps,
+            start = list(a = 20, b = 0, a1 = 5, b1 = 5, a2 = 3, b2 = 3))
+
+fit_params <- coef(fit)
+temps$TREND <- model_formula(temps$NUM_DAY, fit_params["a"], fit_params["b"], fit_params["a1"], 
+                              fit_params["b1"], fit_params["a2"], fit_params["b2"])
+temps$RESID <- temps$T_AVG - temps$TREND
+
+# Fit ARIMA to residuals
+res_model <- auto.arima(temps$RESID, seasonal = TRUE)
+
+# Forecast horizon
+forecast_N <- 30
+future_dates <- seq(max(temps$DAY) + 1, by = "day", length.out = forecast_N)
+future_t <- as.numeric(future_dates - min(temps$DAY))
+
+# Forecast residuals
+res_forecast <- forecast(res_model, h = forecast_N)
+
+# Final temperature forecast = trend + residuals
+trend_forecast <- model_formula(future_t, fit_params["a"], fit_params["b"], fit_params["a1"], 
+                                fit_params["b1"], fit_params["a2"], fit_params["b2"])
+temp_forecast <- trend_forecast + res_forecast$mean
+
+# Build final forecast dataframe with proper CI
+forecast_df <- tibble(
+  Date = future_dates,
+  Temperature = temp_forecast,
+  Lower = trend_forecast + res_forecast$lower[, 2],  # 95% CI
+  Upper = trend_forecast + res_forecast$upper[, 2]
+)
+
+# Plot
+ggplot() +
+  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG), color = "black") +
+  geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
+  geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2, fill = "grey") +
+  geom_line(data = june_data, aes(x = DAY, y = T_AVG), color = "blue") +
+  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") +
+  theme_minimal()
+```
+
+Using the ^TNX CBOE Interest Rate 10 Year
+
+```{r}
+rates <- getSymbols("^TNX", from = Qdate(1,1,2020), auto.assign = F)
+na.approx(Cl(rates)) %>% quickplot("10 year rate as a proxy of the interest rate", plot_engine = "plotly")
+K <- 300 
+alpha <- 2500 
+``` 
+
+```{r}
+r <- as.numeric(last(Cl(rates))/100)
+exp(-r*365)*1/no_sims*
+
 ```
 
 # Sidequests
@@ -1440,3 +1554,4 @@ data.frame(
 #| include: False
 beepr::beep(sound = 4)
 ```
+
