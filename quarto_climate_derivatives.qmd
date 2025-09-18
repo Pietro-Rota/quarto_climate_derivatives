@@ -42,6 +42,8 @@ project:
   type: website
   output-dir: docs
 prefer-html: true 
+
+
 ---
 
 # Weather Derivatives Temperature Options
@@ -57,6 +59,7 @@ theme_set(theme_minimal())
 knitr::opts_chunk$set(fig.align = 'center')
 library(forecast)
 library(nlstools)
+library(colorspace)
 
 # conflicted::conflicts_prefer(dpylr::select)
 # conflicted::conflicts_prefer(dplyr::filter)
@@ -149,23 +152,22 @@ This dataset is from the Agroclimatology community, which is crucial for ensurin
 
 This study utilizes temperature data obtained from the MERRA-2 (Modern-Era Retrospective analysis for Research and Applications, Version 2) dataset, which provides detailed meteorological measurements at a spatial resolution of 0.5 x 0.625 degrees latitude/longitude.
 
-The specific region analyzed, with an average elevation of 288.19 meters, is located at a latitude of 45.5330, and longitude of 9.1911.
+The specific region analyzed, with an average elevation of 288.19 meters, is located at a latitude of 51.5221, and longitude of -0.0903.
 
 ```{r MAP}
 #| column: screen
 library(leaflet, quietly = TRUE, warn.conflicts = FALSE)
 map_data <- data.frame(
   name = "Location",
-  lat = 28.3688,
-  lon = -81.5614
+  lat = 51.5221,
+  lon = -0.0903 
 )
 # Create a leaflet map
 if (knitr::is_html_output()) {
   leaflet(map_data) %>%
     addTiles() %>% # Add default OpenStreetMap tiles
-    addMarkers(~lon, ~lat, label = ~name, ) %>%
-    addCircleMarkers(~lon, ~lat, radius = 10, color = "red", fillOpacity = 0.8) %>%
-    setView(lng = map_data$lon, lat = map_data$lat, zoom = 9)
+    addCircleMarkers(~lon, ~lat, radius = 5, color = "red", fillOpacity = 0.5) %>%
+    setView(lng = map_data$lon, lat = map_data$lat, zoom = 13)
 } else {
   print("interactive map of disneyworld in the html version")
 }
@@ -192,7 +194,7 @@ Temperature at 2 meters refers to the air temperature measured 2 meters (approxi
 -   **Accuracy**: Because it represents the temperature most relevant to human activities and energy consumption, it is directly applicable for creating and settling weather derivatives that are based on temperature-related indices.
 
 ```{r Dataset download}
-ORIGINAL_DATASET <- read.csv("DISNEY DATA.csv", skip = 10)
+ORIGINAL_DATASET <- read.csv("London_DATA.csv")
 
 DATASET <- ORIGINAL_DATASET %>% 
   mutate(T_MAX=remove_outliers(T2M_MAX, fill = "NA") %>% na.approx) %>% 
@@ -465,7 +467,8 @@ runSD(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term
 
 The first step in pricing temperature options is to decompose the time series into distinct components that each represent different underlying patterns. This process is essential for understanding the structure of the data and for developing predictive models. In basic temrs it can be expressed as the sum of three main components:$y_t=T_t+S_t+e_t$, Here, $T_t$ is the trend component that captures the long-term movement, $S_t$ represents the seasonal variations (periodic patterns), and $e_t$ refers to the residuals or noise in the data.
 
-which in our case becomes $$
+which in our case becomes 
+$$
 \overline{T_t} = T_{trend} + T_{seasonal}+ Residuals
 $$
 
@@ -1298,66 +1301,7 @@ for (n in 16:35) {
 }
 ```
 
-```{r}
-library(lubridate)
 
-# Load and prepare observed data
-june_data <- read.csv("Forecast.csv", skip = 10) %>%
-  mutate(T_AVG = (T2M_MAX + T2M_MIN)/2,
-         DAY = as.Date(DOY - 1, origin = paste0(YEAR, "-01-01"))) %>%
-  select(T2M_MAX, T2M_MIN, T_AVG, DAY)
-
-# Improved seasonal trend model with harmonics
-model_formula <- function(t, a, b, a1, b1, a2, b2) {
-  omega <- 2 * pi / 365.25
-  a + b * t +
-    a1 * cos(omega * t) + b1 * sin(omega * t) +
-    a2 * cos(2 * omega * t) + b2 * sin(2 * omega * t)
-}
-
-# Fit model to get parameters
-fit <- nls(T_AVG ~ model_formula(NUM_DAY, a, b, a1, b1, a2, b2),
-            data = temps,
-            start = list(a = 20, b = 0, a1 = 5, b1 = 5, a2 = 3, b2 = 3))
-
-fit_params <- coef(fit)
-temps$TREND <- model_formula(temps$NUM_DAY, fit_params["a"], fit_params["b"], fit_params["a1"], 
-                              fit_params["b1"], fit_params["a2"], fit_params["b2"])
-temps$RESID <- temps$T_AVG - temps$TREND
-
-# Fit ARIMA to residuals
-res_model <- auto.arima(temps$RESID, seasonal = TRUE)
-
-# Forecast horizon
-forecast_N <- 30
-future_dates <- seq(max(temps$DAY) + 1, by = "day", length.out = forecast_N)
-future_t <- as.numeric(future_dates - min(temps$DAY))
-
-# Forecast residuals
-res_forecast <- forecast(res_model, h = forecast_N)
-
-# Final temperature forecast = trend + residuals
-trend_forecast <- model_formula(future_t, fit_params["a"], fit_params["b"], fit_params["a1"], 
-                                fit_params["b1"], fit_params["a2"], fit_params["b2"])
-temp_forecast <- trend_forecast + res_forecast$mean
-
-# Build final forecast dataframe with proper CI
-forecast_df <- tibble(
-  Date = future_dates,
-  Temperature = temp_forecast,
-  Lower = trend_forecast + res_forecast$lower[, 2],  # 95% CI
-  Upper = trend_forecast + res_forecast$upper[, 2]
-)
-
-# Plot
-ggplot() +
-  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG), color = "black") +
-  geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
-  geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2, fill = "grey") +
-  geom_line(data = june_data, aes(x = DAY, y = T_AVG), color = "blue") +
-  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") +
-  theme_minimal()
-```
 
 Using the ^TNX CBOE Interest Rate 10 Year
 
@@ -1369,9 +1313,8 @@ alpha <- 2500
 ``` 
 
 ```{r}
-r <- as.numeric(last(Cl(rates))/100)
-exp(-r*365)*1/no_sims*
-
+# r <- as.numeric(last(Cl(rates))/100)
+# exp(-r*365)*1/no_sims*
 ```
 
 # Sidequests
@@ -1442,9 +1385,9 @@ ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
 
 
 THISYEAR <- data.frame(
-  c(DATASET[DATASET$YEAR == 2024, ]["T_MAX"]),
-  c(DATASET[DATASET$YEAR == 2024, ]["T_AVG"]),
-  c(DATASET[DATASET$YEAR == 2024, ]["T_MIN"])
+  c(DATASET[DATASET$YEAR == 2025, ]["T_MAX"]),
+  c(DATASET[DATASET$YEAR == 2025, ]["T_AVG"]),
+  c(DATASET[DATASET$YEAR == 2025, ]["T_MIN"])
 )
 
 cbind(pivot_df,
@@ -1550,8 +1493,129 @@ data.frame(
 ) %>% apply(2, normalize) %>% quickplot()
 ```
 
+## Milan comparison 
+i just moved from milan and was wondering about the distribution of climate here versus the one from milan
+
+```{r}
+MILAN_RAW <- read.csv("Milan_DATA.csv", skip = 10)
+
+MIL_DATASET <- MILAN_RAW %>%
+  mutate(T_MAX = remove_outliers(T2M_MAX, fill = "NA") %>% na.approx) %>%
+  mutate(T_MIN = remove_outliers(T2M_MIN, fill = "NA") %>% na.approx) %>%
+  mutate(
+    DAY = as.Date(MILAN_RAW$DOY - 1, origin = paste0(MILAN_RAW$YEAR, "-01-01"))
+  ) %>%
+  mutate(Month = month(DAY)) %>%
+  dplyr::select(DAY, YEAR, Month, DOY, T_MAX, T_MIN)
+
+
+MIL_DATASET$T_AVG <- apply(MIL_DATASET[c("T_MAX", "T_MIN")], 1, mean)
+
+MILAN_RAW[ifelse(find_outliers(MILAN_RAW$T2M_MAX) == 0, FALSE, TRUE), ] %>%
+  group_by(YEAR) %>%
+  summarise("Days" = length(DOY)) %>%
+  ggplot(aes(x = YEAR, y = Days)) +
+  geom_bar(stat = "identity") +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Days where the sensor malfunctioned",
+    subtitle = "Identified by remove outliers"
+  )
+
+MIL_pivot_df <- MIL_DATASET %>%
+  select(DOY, YEAR, T_AVG) %>%
+  pivot_wider(names_from = YEAR, values_from = T_AVG)
+
+
+MIL_MAX_pivot_df <- MIL_DATASET %>%
+  select(DOY, YEAR, T_MAX) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MAX)
+
+MIL_MIN_pivot_df <- MIL_DATASET %>%
+  select(DOY, YEAR, T_MIN) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MIN)
+
+ggplot(MIL_DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
+  geom_line() +
+  labs(
+    title = "All years overlapped",
+    x = "Day of the year",
+    y = "Index level of returns"
+  )
+
+
+MIL_THISYEAR <- data.frame(
+  c(MIL_DATASET[MIL_DATASET$YEAR == 2025, ]["T_MAX"]),
+  c(MIL_DATASET[MIL_DATASET$YEAR == 2025, ]["T_AVG"]),
+  c(MIL_DATASET[MIL_DATASET$YEAR == 2025, ]["T_MIN"])
+)
+
+FD <- data.frame(cbind(
+  MIL_pivot_df,
+  "MIL_MIN" = apply(MIL_pivot_df[-1], 1, min, na.rm = TRUE),
+  "MIL_MAX" = apply(MIL_pivot_df[-1], 1, max, na.rm = TRUE),
+  "MIL_MEAN" = apply(MIL_pivot_df[-1], 1, mean, na.rm = TRUE),
+  pivot_df[-1],
+  "LON_MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
+  "LON_MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
+  "LON_MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)
+))
+
+FD %>%
+  ggplot(aes(x = DOY)) +
+  geom_ribbon(aes(ymin = MIL_MIN, ymax = MIL_MAX, fill = "Milan"), alpha = 0.2) +
+  geom_ribbon(aes(ymin = LON_MIN, ymax = LON_MAX, fill = "London"), alpha = 0.2) +
+  geom_line(aes(y = MIL_MEAN, color = "MILAN AVG"), linewidth = 1) +
+  geom_line(aes(y = LON_MEAN, color = "LONDON AVG"), linewidth = 1) +
+  # geom_line(aes(y = MIL_pivot_df$`2025`, color = "AVG_Current_MIL"), linewidth = 0.8) +
+  # geom_line(aes(y = pivot_df$`2025`, color = "AVG_Current_LON"), linewidth = 0.8) +
+  scale_color_manual(name = NULL,
+    values = c(
+      "MILAN AVG" = "darkblue",
+      "LONDON AVG" = "orange2",
+      "AVG_Current_MIL" = "darkblue",
+      "AVG_Current_LON" = "orange2"
+    )
+  ) +
+  scale_fill_manual(
+    name = NULL,
+    values = c(Milan = "lightskyblue", London = "darkorange2")
+  ) +
+  labs(title = "Temperature comparison Milan vs London", y = "Degrees celsius", x = "Day of the year", caption = "NASA POWER - Data Access Viewer (DAV) 1982-2025") +
+  theme(legend.position = "bottom") +
+  guides(color = "none")
+
+minn <- min(FD$LON_MIN, FD$MIL_MIN)
+maxx <- max(FD$LON_MAX, FD$MIL_MAX)
+
+grid.arrange(
+  nrow = 1,
+  DATASET %>%
+    select(Month, T_AVG) %>%
+    group_by(Month) %>%
+    ggplot(aes(x = Month, y = T_AVG, group = Month)) +
+    geom_boxplot(fill = "lightskyblue", outliers = FALSE, staplewidth = 0.8) +
+    scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
+    labs(title = "London - Boxplot for all months across the years", x = NULL, y = NULL) +
+    ylim(minn, maxx)
+    ,
+
+  MIL_DATASET %>%
+    select(Month, T_AVG) %>%
+    group_by(Month) %>%
+    ggplot(aes(x = Month, y = T_AVG, group = Month)) +
+    geom_boxplot(fill = "darkorange2", outliers = FALSE, staplewidth = 0.8) +
+    scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
+    labs(title = "Milan - Boxplot for all months across the years", x = NULL, y = NULL) +
+    ylim(minn, maxx)
+)
+```
+
+
 ```{r beep}
 #| include: False
 beepr::beep(sound = 4)
+rsconnect::writeManifest()
 ```
 

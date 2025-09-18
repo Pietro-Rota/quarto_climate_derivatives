@@ -1,13 +1,326 @@
+#* AUTO-GENERATED STANDALONE R SCRIPT ----
+#* Generated from R Markdown file using extract_r_code()
+#* Source file: quarto_climate_derivatives.qmd
+#* Generated on: 2025-09-16 13:24:51.302272
+
+#* REQUIRED PACKAGES ----
+#? If you don't have these packages, run: install.packages(c("caret", "dplyr", "fBasics", "ggplot2", "knitr", "MASS", "NMOF", "quantmod", "splines", "tidyr", "timeSeries", "zoo", "changepoint", "DT", "forecast", "gt", "leaflet", "nlme", "PerformanceAnalytics", "reshape2", "stats4", "tidyverse", "TTR", "", "colorspace", "e1071", "gganimate", "gtExtras", "lubridate", "nlstools", "plotly", "rugarch", "tibble", "timeDate", "xts", ""))
+# Load required packages
+library(caret)
+library(dplyr)
+library(fBasics)
+library(ggplot2)
+library(knitr)
+library(MASS)
+library(NMOF)
+library(quantmod)
+library(splines)
+library(tidyr)
+library(timeSeries)
+library(zoo)
+library(changepoint)
+library(DT)
+library(forecast)
+library(gt)
+library(leaflet)
+library(nlme)
+library(PerformanceAnalytics)
+library(reshape2)
+library(stats4)
+library(tidyverse)
+library(TTR)
+library(colorspace)
+library(e1071)
+library(gganimate)
+library(gtExtras)
+library(lubridate)
+library(nlstools)
+library(plotly)
+library(rugarch)
+library(tibble)
+library(timeDate)
+library(xts)
+
+#* CUSTOM FUNCTIONS ----
+# Custom functions from main file
+check_acc <- function (data1, data2, n = 10, title = NULL, visual = c(TRUE, FALSE, "both")) 
+{
+    stopifnot(length(data1) == length(data2), is.numeric(data1), is.numeric(data2))
+    accuracy <- data.frame()
+    for (i in 0:n) {
+        new <- mean(round(data1, i) == round(data2, i), na.rm = TRUE)
+        accuracy <- rbind(accuracy, new)
+    }
+    colnames(accuracy) <- "values"
+    cor_val <- cor(data1, data2, use = "complete.obs")
+    mae_val <- mean(abs(data1 - data2), na.rm = TRUE)
+    mse_val <- mean((data1 - data2)^2, na.rm = TRUE)
+    diff_data <- data.frame(data1 = data1, data2 = data2) %>% head(5000) %>% mutate(index = index(.), diff = data1 - data2)
+    diff_range <- range(diff_data$diff, na.rm = TRUE)
+    diff_span <- diff_range[2] - diff_range[1]
+    y_limits <- if (diff_span < 1e-06) {
+        c(-1e-06, 1e-06)
+    }
+    else {
+        NULL
+    }
+    diff_plot <- ggplot(diff_data, aes(x = index, y = diff)) + geom_point(color = "darkred", size = 0.7) + labs(subtitle = "Difference", x = NULL, y = NULL) + coord_cartesian(ylim = y_limits)
+    accplot <- ggplot(accuracy, aes(x = 0:n, y = values)) + geom_line(linewidth = 1, color = "dodgerblue2") + geom_point(size = 2, color = "dodgerblue3") + scale_x_continuous(breaks = seq(0, n, by = 1)) + ylim(0, 1) + scale_y_continuous(labels = label_percent(), limits = c(0, 1)) + labs(subtitle = "Percentage of accuracy", y = NULL, x = "Rounding decimals")
+    plot <- data.frame(data1 = data1, data2 = data2) %>% head(5000) %>% ggplot(aes(x = index(data1))) + geom_point(aes(y = data1, color = "Data1"), size = 2) + geom_point(aes(y = data2, color = "Data2"), size = 2) + scale_color_manual(values = c(Data1 = "purple3", Data2 = "mediumseagreen"), name = NULL) + labs(title = "Visual inspection", y = NULL, x = NULL) + theme(legend.position = "bottom")
+    sum_df <- summary(data.frame(data1 = data1, data2 = data2))
+    full_df <- data.frame(accuracy[accuracy != 0] * 100) %>% round(2) %>% data.frame() %>% set_colnames("Values !=0 %")
+    if (visual[1] == TRUE) {
+        return(marrangeGrob(list(plot, diff_plot, accplot), layout_matrix = matrix(c(3, 3, 2, 2, 1, 1, 1, 1), nrow = 4, ncol = 2), top = title))
+    }
+    else if (visual[1] == FALSE) {
+        return(list(distance = data.frame(COR = cor_val, MAE = mae_val, MSE = mse_val), df = full_df, sum_df = sum_df))
+    }
+    else if (visual[1] == "both") {
+        return(list(plots = marrangeGrob(list(plot, diff_plot, accplot), layout_matrix = matrix(c(3, 3, 2, 2, 1, 1, 1, 1), nrow = 4, ncol = 2), top = title), df = full_df, sum_df = sum_df))
+    }
+}
+
+desc_df <- function (data, quantiles = c(0.01, 0.25, 0.75, 0.99), digits = 4) 
+{
+    summary_stats <- function(x) {
+        n <- sum(!is.na(x))
+        mean <- mean(x, na.rm = TRUE)
+        sd <- sd(x, na.rm = TRUE)
+        median <- median(x, na.rm = TRUE)
+        trimmed <- mean(x, trim = 0.1, na.rm = TRUE)
+        min <- min(x, na.rm = TRUE)
+        max <- max(x, na.rm = TRUE)
+        range <- max - min
+        skew <- sum((x - mean)^3, na.rm = TRUE)/(n * sd^3)
+        kurtosis <- sum((x - mean)^4, na.rm = TRUE)/(n * sd^4) - 3
+        se <- sd/sqrt(n)
+        percent_missing <- sum(is.na(x))/length(x) * 100
+        quantiles_values <- quantile(x, probs = quantiles, na.rm = TRUE)
+        c(n = n, mean = mean, sd = sd, median = median, trimmed = trimmed, min = min, max = max, range = range, skew = skew, kurtosis = kurtosis, se = se, `%NA` = percent_missing, Q = quantiles_values[1], Q = quantiles_values[2], Q = quantiles_values[3], Q = quantiles_values[4])
+    }
+    stats <- sapply(data, function(col) {
+        if (is.numeric(col)) 
+            summary_stats(col)
+        else rep(NA, length(summary_stats(0)))
+    })
+    as.data.frame(round(t(stats), digits = digits))
+}
+
+extract_r_code <- function (input_file, output_file, include_main = TRUE, source_path = "C:/Users/pietr/OneDrive/Desktop/formula.main.R") 
+{
+    lines <- readLines(input_file)
+    in_chunk <- FALSE
+    code_lines <- c()
+    in_self_function <- FALSE
+    self_function_start <- "^extract_r_code_complex\\s*<-\\s*function\\b"
+    if (include_main) {
+        code_lines <- c(code_lines, "#* AUTO-GENERATED STANDALONE R SCRIPT ----", "#* Generated from R Markdown file using extract_r_code()", paste0("#* Source file: ", basename(input_file)), paste0("#* Generated on: ", Sys.time()), "")
+        tryCatch({
+            required_pkgs <- required_packages(input_file)
+            required_pkgs <- required_pkgs[!is.na(required_pkgs) & nzchar(trimws(required_pkgs)) & trimws(required_pkgs) != ""]
+            if (length(required_pkgs) > 0) {
+                code_lines <- c(code_lines, "#* REQUIRED PACKAGES ----", paste0("#? If you don't have these packages, run: install.packages(c(\"", paste(trimws(required_pkgs), collapse = "\", \""), "\"))"), "# Load required packages")
+                for (pkg in required_pkgs) {
+                  if (!is.na(pkg) && nzchar(trimws(pkg)) && trimws(pkg) != "") {
+                    code_lines <- c(code_lines, paste0("library(", trimws(pkg), ")"))
+                  }
+                }
+                code_lines <- c(code_lines, "")
+            }
+        }, error = function(e) {
+            code_lines <<- c(code_lines, "# Warning: Could not automatically detect required packages", "# Please manually add library() calls as needed", "")
+        })
+        tryCatch({
+            if (!exists("functions_loaded", mode = "function")) {
+                stop("functions_loaded() function not found. Please source your main R file first.")
+            }
+            used_functions <- functions_loaded(input_file, dataframe = FALSE)
+            cat("DEBUG: functions_loaded returned:", class(used_functions), "\n")
+            cat("DEBUG: functions_loaded returned:", class(used_functions), "\n")
+            if (is.null(used_functions)) {
+                cat("DEBUG: No custom functions detected in the file\n")
+            }
+            else if (length(used_functions) > 0) {
+                cat("DEBUG: Found", length(used_functions), "custom functions:", paste(used_functions, collapse = ", "), "\n")
+                code_lines <- c(code_lines, "#* CUSTOM FUNCTIONS ----", "# Custom functions from main file")
+                if (!file.exists(source_path)) {
+                  stop("Main R file not found at: ", source_path)
+                }
+                mainEnv <- new.env()
+                cat("DEBUG: Sourcing main file...\n")
+                source(source_path, local = mainEnv)
+                all_main_functions <- ls(envir = mainEnv)
+                all_main_functions <- all_main_functions[sapply(all_main_functions, function(x) is.function(get(x, envir = mainEnv)))]
+                cat("DEBUG: Functions available in main file:", paste(all_main_functions, collapse = ", "), "\n")
+                functions_added <- 0
+                for (func_name in used_functions) {
+                  cat("DEBUG: Processing function:", func_name, "\n")
+                  if (exists(func_name, envir = mainEnv)) {
+                    func_obj <- get(func_name, envir = mainEnv)
+                    if (!is.function(func_obj)) {
+                      cat("DEBUG: Warning -", func_name, "is not a function\n")
+                      next
+                    }
+                    func_text <- deparse(func_obj, width.cutoff = 500)
+                    code_lines <- c(code_lines, paste0(func_name, " <- ", paste(func_text, collapse = "\n")), "")
+                    functions_added <- functions_added + 1
+                    cat("DEBUG: Successfully added function:", func_name, "\n")
+                  }
+                  else {
+                    cat("DEBUG: Warning - function", func_name, "not found in main environment\n")
+                  }
+                }
+                cat("DEBUG: Total functions added:", functions_added, "\n")
+            }
+        }, error = function(e) {
+            cat("ERROR in custom function extraction:", e$message, "\n")
+            code_lines <<- c(code_lines, paste0("# Warning: Could not automatically extract custom functions"), paste0("# Error: ", e$message), "# Please manually add function definitions as needed", "")
+        })
+        code_lines <- c(code_lines, "#* MAIN CODE ----", "")
+    }
+    for (line in lines) {
+        if (grepl(self_function_start, line)) {
+            in_self_function <- TRUE
+        }
+        if (in_self_function && grepl("^\\s*}\\s*$", line)) {
+            in_self_function <- FALSE
+            next
+        }
+        if (in_self_function) {
+            next
+        }
+        if (include_main && (grepl("^\\s*(library|require)\\s*\\(", line) || grepl("^\\s*source\\s*\\(", line) || grepl("extract_r_code.*\\(", line))) {
+            next
+        }
+        if (!in_chunk && grepl("^#{1,6} ", line)) {
+            heading <- sub("^#+\\s+", "", line)
+            code_lines <- c(code_lines, "", paste0("#* ", heading, " ----"))
+        }
+        else if (grepl("^```\\{r", line)) {
+            in_chunk <- TRUE
+            chunk_label <- sub("^```\\{r\\s*([^,}]*)?.*", "\\1", line)
+            chunk_label <- trimws(chunk_label)
+            label_line <- if (nzchar(chunk_label)) {
+                paste0("## ", chunk_label, " ----")
+            }
+            else {
+                "## unnamed chunk ----"
+            }
+            code_lines <- c(code_lines, "", label_line)
+        }
+        else if (grepl("^```", line) && in_chunk) {
+            in_chunk <- FALSE
+        }
+        else if (in_chunk) {
+            if (!grepl("^#\\|", line)) {
+                code_lines <- c(code_lines, line)
+            }
+        }
+    }
+    writeLines(code_lines, output_file)
+    cat("Standalone R script created successfully!\n")
+    cat("Output file:", output_file, "\n")
+    if (include_main) {
+        cat("Dependencies automatically included.\n")
+    }
+}
+
+find_outliers <- function (x, yes = 1, no = 0) 
+{
+    Q1 <- quantile(x, 0.25, na.rm = TRUE)
+    Q3 <- quantile(x, 0.75, na.rm = TRUE)
+    IQR <- Q3 - Q1
+    lower_bound <- Q1 - 2 * IQR
+    upper_bound <- Q3 + 2 * IQR
+    df <- numeric(length(x))
+    df <- data.frame(ifelse(x < lower_bound | x > upper_bound, yes = yes, no = no)) %>% na.fill(fill = 0)
+    return(df)
+}
+
+normalize <- function (x, peak = 100) 
+{
+    MAX <- max(x, na.rm = TRUE)
+    df <- (x/MAX) * peak
+    return(df)
+}
+
+Qdate <- function (day, month, year) 
+{
+    date_string <- paste(year, month, day, sep = "-")
+    date <- as.Date(date_string, format = "%Y-%m-%d")
+    return(date)
+}
+
+quickplot <- function (data, title = NULL, plot_engine = c("ggplot", "plotly"), xlab = "Date", ylab = "Value", show_legend = TRUE, subtitle = NULL, caption = NULL, linewidth = 0.4, legend_name = "Variable", legend_position = c("right", "left", "bottom", "top"), alpha = 1, type = geom_line, facet_wrap = FALSE, x_size = 1, x_start = 1, x_step = 1, show_x = TRUE) 
+{
+    plot_data <- data.frame(Date = index(data), data)
+    custom_palette <- rep(c("firebrick", "darkblue", "#006400", "gray30", "#457575", "#6100a8", "orange2", "brown", "#483D8B", "#556B2F", "#8B008B", "#5F9EA0", "#6B8E23", "#9932CC"), 1000)
+    my_data_long <- pivot_longer(data = plot_data, cols = -Date, names_to = "Variable", values_to = "Value")
+    if (class(data)[1] != "xts") {
+        my_data_long$Date <- my_data_long$Date/x_size
+    }
+    if (x_start != 1) {
+        my_data_long$Date <- my_data_long$Date + x_start
+    }
+    plot <- ggplot(my_data_long, aes(x = Date, y = Value, color = Variable)) + type(linewidth = linewidth, alpha = alpha) + labs(title = title, subtitle = subtitle, caption = caption, x = xlab, y = ylab) + scale_color_manual(name = legend_name, values = custom_palette) + theme(legend.position = legend_position[1], plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+    if (!show_legend) {
+        plot <- plot + theme(legend.position = "none")
+    }
+    if (!show_x) {
+        plot <- plot + theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())
+    }
+    if (facet_wrap) {
+        plot <- plot + facet_wrap(~Variable)
+        return(plot)
+    }
+    final_plot <- switch(plot_engine[1], ggplot = plot, plotly = ggplotly(plot) %>% layout(xaxis = list(rangeslider = list(visible = TRUE, thickness = 0.08)), yaxis = list(fixedrange = FALSE), dragmode = "zoom"))
+    return(final_plot)
+}
+
+remove_outliers <- function (x, fill = c("mean", "median", "NA", "zero"), min = 0.25, max = 0.75) 
+{
+    Q1 <- quantile(x, min, na.rm = TRUE)
+    Q3 <- quantile(x, max, na.rm = TRUE)
+    IQR <- Q3 - Q1
+    lower_bound <- Q1 - 2 * IQR
+    upper_bound <- Q3 + 2 * IQR
+    rep <- switch(fill[1], mean = mean(x, na.rm = TRUE), median = median(x, na.rm = TRUE), `NA` = NA, zero = 0)
+    x[x < lower_bound | x > upper_bound] <- rep
+    return(x)
+}
+
+RSS <- function (y, y_pred) 
+{
+    sum((y - y_pred)^2)
+}
+
+show_df <- function (prices, n = 5, rounding = Inf, name_first_col = "DATE") 
+{
+    price_date <- cbind(index(prices), smart_round(data.frame(prices), rounding))
+    colnames(price_date) <- (c(name_first_col, colnames(prices)))
+    rownames(price_date) <- (1:length(index(prices)))
+    first_rows <- head(price_date, n)
+    last_rows <- tail(price_date, n)
+    separator <- matrix(NA, nrow = 1, ncol = ncol(price_date))
+    colnames(separator) <- (c(name_first_col, colnames(prices)))
+    summary_table <- bind_rows(first_rows, as.data.frame(separator), last_rows)
+    return(summary_table)
+}
+
+smart_round <- function (df, digits = 2) 
+{
+    mutate(df, across(where(is.numeric), round, digits = digits))
+}
+
+#* MAIN CODE ----
+
 
 #* Weather Derivatives Temperature Options ----
 
 ## setup ----
-source("C:/Users/pietr/OneDrive/Desktop/formula.main.R")
 Sys.setlocale("LC_TIME", "English") # set output language in English
 theme_set(theme_minimal())
 knitr::opts_chunk$set(fig.align = 'center')
-library(forecast)
-library(nlstools)
 
 # conflicted::conflicts_prefer(dpylr::select)
 # conflicted::conflicts_prefer(dplyr::filter)
@@ -38,7 +351,6 @@ when_rendering(required_packages(file))
 when_rendering(required_functions(file))
 
 ## github file ----
-extract_r_code(file, "climate_derivatives_just_code.R")
 
 ## time info ----
 cat("time of creation", "\n")
@@ -49,7 +361,6 @@ cat("Last Access", "\n")
 print(file.info(file)$mtime, "\n")
 
 ## MAP ----
-library(leaflet, quietly = TRUE, warn.conflicts = FALSE)
 map_data <- data.frame(
   name = "Location",
   lat = 28.3688,
@@ -138,7 +449,6 @@ tail(cleandataset, lookback) %>%
                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))
 
 ## gganimate ----
-library(gganimate)
 
 months365 <- c()  # initialize empty vector
 
@@ -174,7 +484,6 @@ print("animated plot in html")
 }
 
 ## unnamed chunk ----
-library(tidyverse)
 
 pivot_df <- DATASET %>%
   mutate(t_diff = c(NA, diff(T_AVG))) %>% 
@@ -331,7 +640,6 @@ temps$Denoised <- na.fill(temps$Denoised, mean(temps$Denoised, na.rm = TRUE))
 
 temps$Trend <- SMA(temps$Denoised, n = lookback)
 
-library(nlme, quietly = T, warn.conflicts = F)
 
 # Define the model
 sin_component <- function(t, a, b, alpha, theta) {
@@ -570,7 +878,6 @@ vol1 <- temps %>%
 #* B-splines ----
 
 ## B-splines ----
-library(splines)
 x <- 1:366
 y <- vol$std
 
@@ -695,7 +1002,6 @@ grid.arrange(grobs = plots, nrow = 3, ncol = 3,
 #* Regime switch ----
 
 ## Regime switch ----
-library(changepoint, quietly = T, warn.conflicts = F)
 create_changepoint_plot <- function(n_breaks, x, y) {
   # Detect changepoints in variance with fixed number of breaks
   cp <- cpt.var(y, method = "PELT", Q = n_breaks)
@@ -966,6 +1272,108 @@ ggplot(plot_data, aes(x = Temperature, fill = Season)) +
   theme_minimal() +
   theme(legend.position = "bottom")
 
+
+# Create the plot
+ggplot(plot_data, aes(x = Temperature, fill = Season)) +
+  geom_histogram(position = "identity", alpha = 0.9, bins = 80) +
+  geom_freqpoly(data=winter_dataset, aes(x = T_AVG, y = after_stat(count*10), color = "Hist Winter"),  bins = 80, linewidth = 2)+
+  geom_freqpoly(data=summer_dataset, aes(x = T_AVG, y = after_stat(count*10), color = "Hist Summer"),  bins = 80, linewidth = 2)+
+  geom_vline(aes(xintercept = Tbar_winter), color = darken("steelblue", 0.3), linewidth = 2, linetype = "solid") +
+  geom_vline(aes(xintercept = Tbar_summer), color = darken("orange", 0.3), linewidth = 2, linetype = "solid") +
+  scale_fill_manual(values = c(Winter = "steelblue", Summer = "orange")) +
+  scale_color_manual(name = NULL, values = c("Hist Winter" = "navy", "Hist Summer" = "darkorange")) +
+  labs(title = "Comparison of both historical and simulated", x = "Temperature (°C)", y = "Simulated Frequency") +
+  theme(legend.position = "bottom") +
+  scale_y_continuous(name = "Frequency", sec.axis = sec_axis(~ . * 0.07, name = "Historical Frequency"))
+
+## unnamed chunk ----
+prob_sim_summer <- as.numeric(sim_results_summer$mc_sims[-1])
+
+for (n in 16:35) {
+  payoffs <- ifelse(prob_sim_summer >= n, 0, n - prob_sim_summer)
+  prob_no_payout <- mean(payoffs == 0) * 100
+  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
+}
+
+## unnamed chunk ----
+prob_sim_winter <- as.numeric(sim_results_winter$mc_sims[-1])
+
+for (n in 16:35) {
+  payoffs <- ifelse(prob_sim_winter <= n, 0, n - prob_sim_winter)
+  prob_no_payout <- mean(payoffs == 0) * 100
+  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
+}
+
+## unnamed chunk ----
+
+# Load and prepare observed data
+june_data <- read.csv("Forecast.csv", skip = 10) %>%
+  mutate(T_AVG = (T2M_MAX + T2M_MIN)/2,
+         DAY = as.Date(DOY - 1, origin = paste0(YEAR, "-01-01"))) %>%
+  select(T2M_MAX, T2M_MIN, T_AVG, DAY)
+
+# Improved seasonal trend model with harmonics
+model_formula <- function(t, a, b, a1, b1, a2, b2) {
+  omega <- 2 * pi / 365.25
+  a + b * t +
+    a1 * cos(omega * t) + b1 * sin(omega * t) +
+    a2 * cos(2 * omega * t) + b2 * sin(2 * omega * t)
+}
+
+# Fit model to get parameters
+fit <- nls(T_AVG ~ model_formula(NUM_DAY, a, b, a1, b1, a2, b2),
+            data = temps,
+            start = list(a = 20, b = 0, a1 = 5, b1 = 5, a2 = 3, b2 = 3))
+
+fit_params <- coef(fit)
+temps$TREND <- model_formula(temps$NUM_DAY, fit_params["a"], fit_params["b"], fit_params["a1"], 
+                              fit_params["b1"], fit_params["a2"], fit_params["b2"])
+temps$RESID <- temps$T_AVG - temps$TREND
+
+# Fit ARIMA to residuals
+res_model <- auto.arima(temps$RESID, seasonal = TRUE)
+
+# Forecast horizon
+forecast_N <- 30
+future_dates <- seq(max(temps$DAY) + 1, by = "day", length.out = forecast_N)
+future_t <- as.numeric(future_dates - min(temps$DAY))
+
+# Forecast residuals
+res_forecast <- forecast(res_model, h = forecast_N)
+
+# Final temperature forecast = trend + residuals
+trend_forecast <- model_formula(future_t, fit_params["a"], fit_params["b"], fit_params["a1"], 
+                                fit_params["b1"], fit_params["a2"], fit_params["b2"])
+temp_forecast <- trend_forecast + res_forecast$mean
+
+# Build final forecast dataframe with proper CI
+forecast_df <- tibble(
+  Date = future_dates,
+  Temperature = temp_forecast,
+  Lower = trend_forecast + res_forecast$lower[, 2],  # 95% CI
+  Upper = trend_forecast + res_forecast$upper[, 2]
+)
+
+# Plot
+ggplot() +
+  geom_line(data = tail(temps, 100), aes(x = DAY, y = T_AVG), color = "black") +
+  geom_line(data = forecast_df, aes(x = Date, y = Temperature), color = "red") +
+  geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2, fill = "grey") +
+  geom_line(data = june_data, aes(x = DAY, y = T_AVG), color = "blue") +
+  labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") +
+  theme_minimal()
+
+## unnamed chunk ----
+rates <- getSymbols("^TNX", from = Qdate(1,1,2020), auto.assign = F)
+na.approx(Cl(rates)) %>% quickplot("10 year rate as a proxy of the interest rate", plot_engine = "plotly")
+K <- 300 
+alpha <- 2500 
+
+## unnamed chunk ----
+r <- as.numeric(last(Cl(rates))/100)
+exp(-r*365)*1/no_sims*
+
+
 #* Sidequests ----
 
 #* Sidequest: overlap of the dataset ----
@@ -1101,10 +1509,6 @@ ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+
 
 ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
 
-
-## beep ----
-beepr::beep(sound = 4)
-
 ## unnamed chunk ----
 # Assuming trading_dates and sim_length already defined
 x_vals <- as.numeric(trading_dates) - first_ord
@@ -1125,3 +1529,7 @@ data.frame(
   dTbar_vals = dTbar_vals,
   sigma_vals = sigma_vals
 ) %>% apply(2, normalize) %>% quickplot()
+
+## beep ----
+beepr::beep(sound = 4)
+rsconnect::writeManifest()
