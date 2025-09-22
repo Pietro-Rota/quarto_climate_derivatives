@@ -827,80 +827,26 @@ vol <- temps %>%
   summarise(mean = mean(T_AVG, na.rm = TRUE),
             std = sd(T_AVG, na.rm = TRUE))
 
-quickplot(vol$std, type = geom_point)
-```
-
-There are many models to try and use, I'm trying a couple to be thorough
-
-* B-splines
-* Polynomial regression 
-* Fourier transformation
-* Regime switch
-* Loess modeling 
-
-A good way is to look at both fit and complexity-adjusted metrics:
-  - RSS (Residual Sum of Squares): how close the fit is. Lower is better.
-  - AIC (Akaike Information Criterion): trade-off between fit and complexity. Lower is better.
-  - Visual inspection: sometimes a model with slightly worse AIC is much smoother/interpretable.
-
-## B-splines
-
-Flexible non-parametric method that fits piecewise ials (splines) at different intervals (knots).
-
-Avoids overfitting by controlling the number of knots.
-
-AIC (Akaike Information Criterion): Helps select the best model by balancing goodness-of-fit and complexity (lower AIC preferred).
-
-The residual sum of squares (RSS) measures the level of variance in the error term, or residuals, of a regression model. The smaller the residual sum of squares, the better your model fits your data; the greater the residual sum of squares, the poorer your model fits your data.
-
-```{r B-splines, fig.width= 9}
-library(splines)
+# just a shorthand for reference 
 x <- 1:366
 y <- vol$std
 
-# Define the number of knots
-knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
-x <- 1:366
-# Function to create a spline model and plot
-create_spline_plot <- function(knots, x, y) {
-  # Fit the spline model
-  spline_model <- lm(y ~ bs(x, knots = knots))
-  yfit <- predict(spline_model, data.frame(x = x))
-  
-  # Calculate Residual Sum of Squares (RSS)
-  rss <- sum((y - yfit)^2)
-  aic <- length(x) * log(rss / length(x)) + 2 * knots
-
-  # Create the plot
-  plot <- ggplot() +
-    geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
-    geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
-    ggtitle(paste("Knots #", knots, "\nRSS:", round(rss, 2), "AIC:", round(aic,2))) +
-    labs(x = NULL, y = NULL)
-    theme_classic()
-
-  # Return both plot and metrics
-  return(list(
-    plot = plot,
-    knots = knots,
-    rss = rss,
-    aic = aic
-  ))
-}
-
-results <- lapply(knots, create_spline_plot, x = x, y = y)
-
-plots <- lapply(results, function(x) x$plot)
-# Arrange and display the plots in a 2x3 grid
-grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different B-splines models")
-
-spline_metrics_df <- data.frame(
-  parameter = sapply(results, function(x) x$knots),
-  rss = sapply(results, function(x) x$rss),
-  aic = sapply(results, function(x) x$aic)
-) %>% 
-    set_rownames(paste0("BSPL",1:9))
+quickplot(vol$std, type = geom_point)
 ```
+
+The volatilty definitely has a shape and so we can try and model it with a deterministic model. There are many models to try and use, I'm trying a bunch to be thorough:
+
+* Polynomial regression 
+* Fourier transformation
+* B-splines
+* Kernel smoothing
+* Loess modeling 
+* Generalized additive modelling
+
+A good way is to look at both fit and complexity-adjusted metrics:
+  - Akaike Information Criterion (AIC): Helps select the best model by balancing goodness-of-fit and complexity by including the number of parameters alongside the log-likelihood in its calculation.
+  - The residual sum of squares (RSS) measures the level of variance in the error term, or residuals, of a regression model. The smaller the residual sum of squares, the better your model fits your data; the greater the residual sum of squares, the poorer your model fits your data.
+  - Visual inspection: sometimes a model with slightly worse AIC is much smoother/interpretable.
 
 ## Polynomial Regression:
 Polynomial regression is an extension of linear regression where the relationship between the independent variable(s) and the dependent variable is modeled as an $n-th$ degree polynomial. Polynomial regression allows for curvature by adding higher-order terms:
@@ -915,8 +861,6 @@ These patterns are non-linear, so a simple straight-line regression won’t capt
 Polynomial regression lets you fit a smooth curve that adapts to rises and falls over the 366 days.
 
 ```{r polynomial, fig.width= 9}
-# Function to create polynomial model and plot
-x <- 1:366
 create_poly_plot <- function(degree, x, y) {
   # Fit polynomial model
   model <- lm(y ~ poly(x, degree, raw = TRUE))
@@ -966,11 +910,11 @@ poly_metrics_df <- data.frame(
 ## Fourier transforms
 
 The Fourier transform is a mathematical technique that breaks down any signal (like your volatility over days) into a sum of sinusoids (sines and cosines) at different frequencies.
-Idea: instead of fitting polynomials or splines, we represent the curve as a combination of waves:
 $$f(x) \approx a_0 + \sum_{k=1}^n \big( a_k \cos(2\pi kx/T) + b_k \sin(2\pi kx/T) \big)$$
 
 This is especially powerful for seasonal or periodic data like temperature volatility, because cycles are naturally captured by sines and cosinesThis is especially powerful for seasonal or periodic data like temperature volatility, because cycles are naturally captured by sines and cosines
 
+for this application im not changing the Amplitude (Strength of each frequency component), or Phase (Timing offset of each component) opting to just increase the order 
 
 ```{r fourier int}
 fourier_series <- function(x, n_terms, period = 365.25) {
@@ -984,10 +928,9 @@ fourier_series <- function(x, n_terms, period = 365.25) {
   return(terms)
 }
 
-fourier_series(1:366, 3) %>%
-  data.frame("actual" = normalize(y, 1)) %>%
-  quickplot(
-    title = "Fourier transformation different components with actual volatility",
+fourier_series(1:366, 3) %>% 
+  data.frame() %>% 
+    quickplot(title = "Fourier transformation different components",
     subtitle = "Order 3 so 7 components",
     xlab = "Day of the year"
   )
@@ -1045,69 +988,130 @@ fourier_metrics_df <- data.frame(
     set_rownames(paste0("FOU",1:9))
 ```
 
-## Regime switch
+
+## B-splines
+B-splines create smooth curves by joining together piecewise polynomials at specific points called "knots." Think of it as drawing a smooth curve through control points, in this case Equally spaced knots, where each piece is a simple polynomial. 
+It is a model with excellent numerical stability (very hard to create overfittting)
 
 
+```{r B-splines, fig.width= 9}
+library(splines)
+# Define the number of knots
+knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
+x <- 1:366
+# Function to create a spline model and plot
+create_spline_plot <- function(knots, x, y) {
+  # Fit the spline model
+  spline_model <- lm(y ~ bs(x, knots = knots))
+  yfit <- predict(spline_model, data.frame(x = x))
+  
+  # Calculate Residual Sum of Squares (RSS)
+  rss <- sum((y - yfit)^2)
+  aic <- length(x) * log(rss / length(x)) + 2 * knots
 
-```{r Regime switch, fig.width= 9}
-#| warnings: False
-library(changepoint, quietly = T, warn.conflicts = F)
-create_changepoint_plot <- function(n_breaks, x, y) {
-  # Detect changepoints in variance with fixed number of beaks
-  cp <- cpt.var(y, method = "SegNeigh", Q = n_breaks, penalty = "Manual")
-  segs <- c(1, cpts(cp), length(y) + 1)
-  regime_sd <- rep(NA, length(y))
+  # Create the plot
+  plot <- ggplot() +
+    geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
+    geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
+    ggtitle(paste("Knots #", knots, "\nRSS:", round(rss, 2), "AIC:", round(aic,2))) +
+    labs(x = NULL, y = NULL)
+    theme_classic()
 
-  for (i in 1:(length(segs) - 1)) {
-    idx <- segs[i]:(segs[i + 1] - 1)
-    regime_sd[idx] <- sd(y[idx])
-  }
-
-
-  # RSS (within segment variance sum)
-  rss <- sum((y - na.omit(regime_sd))^2)
-  n <- 366
-  aic <- n*log(rss/n)+2*n_breaks
-
-  # Build plot
-  data_plot <- data.frame(x = x, y = y, sd_fit = regime_sd)
-  plot <- ggplot(data_plot, aes(x = x)) +
-    geom_point(aes(y = y), color = 'purple4', size = 1) +
-    geom_line(aes(y = sd_fit), color = 'black', linewidth = 1) +
-    ggtitle(paste("Breaks:", n_breaks, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
-    theme_classic() +
-    labs(y = NULL, x = NULL) 
-
-    # Return both plot and metrics
+  # Return both plot and metrics
   return(list(
     plot = plot,
-    breaks = n_breaks,
+    knots = knots,
     rss = rss,
     aic = aic
   ))
 }
-# Create 9 plots for rhe breaks
-breaks <- c(1, 2, 4, 8, 10, 12, 20, 30, 40)
-results <- suppressWarnings(lapply(breaks, create_changepoint_plot, x = x, y = y))
+
+results <- lapply(knots, create_spline_plot, x = x, y = y)
 
 plots <- lapply(results, function(x) x$plot)
+# Arrange and display the plots in a 2x3 grid
+grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different B-splines models")
 
-suppressWarnings(grid.arrange(grobs = plots, nrow = 3, ncol = 3,
-  left = "Standard deviation of temperatures",
-  bottom = "Day of the year",
-  top = "Variance Regime Switching Models"))
-
-# Extract metrics into a data frame
-reg_metrics_df <- data.frame(
-  parameter = sapply(results, function(x) x$breaks),
+spline_metrics_df <- data.frame(
+  parameter = sapply(results, function(x) x$knots),
   rss = sapply(results, function(x) x$rss),
-  aic = sapply(results, function(x) x$aic)) %>% 
-    set_rownames(paste0("REG",1:9))
-
-
+  aic = sapply(results, function(x) x$aic)
+) %>% 
+    set_rownames(paste0("BSPL",1:9))
 ```
 
+
+## Kernel smoothing 
+Kernel regression creates smooth predictions by taking weighted averages of nearby data points. Points closer to the prediction location get higher weights, creating a locally-adapted smooth curve, also known as the Nadaraya-Watson estimator.
+
+$$\hat y(x) = \sum_i^n w_i(x) * y_i$$
+
+where $w(x)$ is the weights function in this case im using a gaussian kernel $K(u)=exp\left(−\frac12​u^2\right)$
+
+the bandwidth (h) is the control term
+Small h: More wiggly, follows data closely (high variance, low bias)
+Large h: Smoother, averages over more points (low variance, high bias)
+
+```{r}
+create_kernel_plot <- function(x, y, bandwidth) {
+  # Nadaraya-Watson kernel regression
+  kernel_smooth <- function(x_eval, x_data, y_data, h_val=10) {
+    weights <- exp(-0.5 * ((x_eval - x_data) / h_val)^2)
+    weights <- weights / sum(weights)
+    return(sum(weights * y_data))
+  }
+  
+  y_pred <- sapply(x, function(xi) kernel_smooth(xi, x, y, ))
+  
+  # Calculate metrics
+  rss <- sum((y - y_pred)^2)
+  n <- length(y)
+  # Rough approximation of degrees of freedom for kernel smoother
+  edf <- n / (1 + (bandwidth/sd(x))^2)
+  aic <- n * log(rss/n) + 2*bandwidth
+  
+  data_plot <- data.frame(x = x, y = y, y_pred = y_pred)
+  
+  plot <- ggplot(data_plot, aes(x = x)) +
+    geom_point(aes(y = y), color = 'purple4', size = 1, alpha = 0.7) +
+    geom_line(aes(y = y_pred), color = 'black', linewidth = 1.2) +
+    ggtitle(paste("Bandwidth:", bandwidth, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
+    theme_classic() +
+    labs(y = "Temperature", x = "Day of Year")
+  
+  return(list(plot = plot, rss = rss, aic = aic, bandwidth = bandwidth))
+}
+
+# Example: spans from 0.1 to 0.9
+width <- floor(seq(5, 50, length.out = 9))
+
+# Run for all bandwidth
+results <- lapply(width, create_kernel_plot, x = x, y = y)
+
+# Extract plots
+plots <- lapply(results, function(x) x$plot)
+
+# Arrange in 3x3 grid
+grid.arrange(grobs = plots, nrow = 3, ncol = 3,
+            left = "Standard deviation of temperatures",
+            bottom = "Day of the year",
+            top = "Different KERNEL smoothing models")
+
+# Extract metrics into data frame
+kernel_metrics_df <- data.frame(
+  parameter = sapply(results, function(x) x$bandwidth),
+  rss = sapply(results, function(x) x$rss),
+  aic = sapply(results, function(x) x$aic)) %>% 
+    set_rownames(paste0("KERN",1:9))
+```
+
+
 ## Loess modelling 
+LOESS fits a smooth curve by performing many small linear or quadratic regressions on local neighborhoods of data points. At each point, it gives more weight to nearby observations and less to distant ones.
+For each point x₀, define a neighborhood containing the α fraction of closest points (span parameter) 
+
+- Small span: More wiggly, follows data closely
+- Large span: Smoother, more global averaging
 
 ```{r loess, fig.width= 9}
 create_loess_plot <- function(span_val, x, y) {
@@ -1146,36 +1150,127 @@ create_loess_plot <- function(span_val, x, y) {
 spans <- seq(0.1, 0.9, by = 0.1)
 
 # Run for all spans
-results_loess <- lapply(spans, create_loess_plot, x = x, y = y)
+results <- lapply(spans, create_loess_plot, x = x, y = y)
 
 # Extract plots
-plots_loess <- lapply(results_loess, function(x) x$plot)
+plots <- lapply(results, function(x) x$plot)
 
 # Arrange in 3x3 grid
-grid.arrange(grobs = plots_loess, nrow = 3, ncol = 3,
+grid.arrange(grobs = plots, nrow = 3, ncol = 3,
             left = "Standard deviation of temperatures",
             bottom = "Day of the year",
             top = "Different LOESS smoothing models")
 
 # Extract metrics into data frame
 loess_metrics_df <- data.frame(
-  parameter = sapply(results_loess, function(x) x$span),
-  rss = sapply(results_loess, function(x) x$rss),
-  aic = sapply(results_loess, function(x) x$aic)) %>% 
+  parameter = sapply(results, function(x) x$span),
+  rss = sapply(results, function(x) x$rss),
+  aic = sapply(results, function(x) x$aic)) %>% 
     set_rownames(paste0("LOESS",1:9))
 
 ```
 
+## GAM
+
+GAM models fit smooth, flexible curves to data by combining multiple smooth functions instead of assuming a specific parametric form. Think of it as "flexible regression" that can capture complex patterns without forcing them into straight lines or simple curves.
+A basis functions is needed to control the curvature, I'm using as the basis functions cyclic cubic regression splines `bs = "cc"`, a penalized cubic regression splines up to second derivative.
+$$ y = β_0 + f_1(x_1) + f_2(x_2) + ε$$
 
 ```{r}
-all_metrics <- rbind(
-  spline_metrics_df,
+library(mgcv, warn.conflicts = F, quietly = T)
+
+create_gam_plot <- function(x, y, k_value) {
+  # Fit GAM with cyclic smooth for seasonal data
+  gam_model <- gam(y ~ s(x, bs = "cc", k = k_value), weights = rep(1, length(y)))
+  
+  # Predict
+  y_pred <- predict(gam_model)
+  
+  # Calculate metrics
+  rss <- sum((y - y_pred)^2)
+  n <- 366
+  edf <- sum(gam_model$edf)  # effective degrees of freedom
+  aic <- n * log(rss/n) + 2 * edf
+  
+  data_plot <- data.frame(x = x, y = y, y_pred = y_pred)
+  
+  plot <- ggplot(data_plot, aes(x = x)) +
+    geom_point(aes(y = y), color = 'purple4', size = 1, alpha = 0.7) +
+    geom_line(aes(y = y_pred), color = 'black', linewidth = 1.2) +
+    ggtitle(paste("K:", k_value, "\nRSS:", round(rss, 2), 
+                  "AIC:", round(aic, 2))) +
+    theme_classic() +
+    labs(y = "Temperature", x = "Day of Year")
+  
+  return(list(plot = plot, k_value = k_value, rss = rss, aic = aic))
+}
+
+# Example: spans from 0.1 to 0.9
+k_values <- floor(seq(1, 20, length.out = 9))
+
+# Run for all spans
+results <- lapply(k_values, create_gam_plot, x = x, y = y)
+
+# Extract plots
+plots <- lapply(results, function(x) x$plot)
+
+# Arrange in 3x3 grid
+grid.arrange(grobs = plots, nrow = 3, ncol = 3,
+            left = "Standard deviation of temperatures",
+            bottom = "Day of the year",
+            top = "Different GAM smoothing models")
+
+# Extract metrics into data frame
+gam_metrics_df <- data.frame(
+  parameter = sapply(results, function(x) x$k_value),
+  rss = sapply(results, function(x) x$rss),
+  aic = sapply(results, function(x) x$aic)) %>% 
+    set_rownames(paste0("GAM",1:9))
+```
+
+## Figuring out which is the best model 
+Now for the task of comparing the models as i 
+
+```{r}
+#| layout-ncol: 2
+comparison_df <- rbind(
   poly_metrics_df,
   fourier_metrics_df,
-  reg_metrics_df,
-  loess_metrics_df)
+  spline_metrics_df,
+  kernel_metrics_df,
+  loess_metrics_df,
+  gam_metrics_df
+) %>%
+  set_colnames(c("Parameter", "RSS", "AIC"))
 
-quickbarplot(all_metrics$aic)
+
+summary_comparison_df <- data.frame()
+
+for (i in 1:6) {
+  summary_comparison_df <- rbind(
+    summary_comparison_df,
+    (apply(comparison_df[seq((i - 1) * 9 + 1, 9 * i), ], 2, mean))
+  )
+}
+
+summary_comparison_df[, 1] <- c("Polynomial", "Fourier", "B-spline", "Kernel", "Loess", "GAM")
+colnames(summary_comparison_df) <- c("Model", "RSS", "AIC")
+
+summary_comparison_df$RSS %>%
+  set_names(summary_comparison_df$Model) %>%
+  quickbarplot(title = "RSS value of all models", palette = "navyblue")
+summary_comparison_df$AIC %>%
+  set_names(summary_comparison_df$Model) %>%
+  quickbarplot(title = "AIC value of all models", palette = "darkred")
+
+head(comparison_df[order(comparison_df$AIC), ]) %>%
+  gt(rownames_to_stub = T) %>%
+  opt_stylize(5, color = "blue") %>%
+  tab_header("Best model according to AIC")
+head(comparison_df[order(comparison_df$RSS), ]) %>%
+  gt(rownames_to_stub = T) %>%
+  opt_stylize(5, color = "green") %>%
+  tab_header("Best model according to RSS")
 ```
 
 
