@@ -42,8 +42,8 @@ project:
   type: website
   output-dir: docs
 prefer-html: true 
-
-
+params:
+  gganimate: false
 ---
 
 # Weather Derivatives Temperature Options
@@ -115,6 +115,8 @@ cat("LAST MODIFICATION", "\n")
 print(file.info(file)$mtime, "\n")
 cat("Last Access", "\n")
 print(file.info(file)$mtime, "\n")
+cat("Last Render", "\n")
+print(Sys.time(), "\n")
 ```
 
 </details>
@@ -270,7 +272,7 @@ tail(cleandataset, lookback) %>%
 ```
 
 
-```{r gganimate}
+```{r gganimate, eval = params$gganimate}
 library(gganimate)
 
 months365 <- c()  # initialize empty vector
@@ -557,11 +559,11 @@ fit <- nls(Denoised ~ sin_component(NUM_DAY, a, b, alpha, theta),
 
 
 # Get coefficients and confidence intervals for the model
-params <- coef(fit)
+MOD_params <- coef(fit)
 confint_fit <- suppressMessages(confint(fit))
 
-temps$SEAS <- params["alpha"] * sin(omega * temps$NUM_DAY + params["theta"])
-temps$TREND <- params["a"] + params["b"] * temps$NUM_DAY
+temps$SEAS <- MOD_params["alpha"] * sin(omega * temps$NUM_DAY + MOD_params["theta"])
+temps$TREND <- MOD_params["a"] + MOD_params["b"] * temps$NUM_DAY
 temps$BAR <- temps$TREND + temps$SEAS
 temps$RESID <-  temps$T_AVG - temps$TREND - temps$SEAS
 ```
@@ -584,8 +586,8 @@ for assessing my model performance I'm looking at the values and confidence inte
 
 ```{r performance, echo=FALSE}
 # Print Model 
-for (i in 1:length(params)) {
-  cat(names(params)[i], ": ", round(params[i], 3), 
+for (i in 1:length(MOD_params)) {
+  cat(names(MOD_params)[i], ": ", round(MOD_params[i], 3), 
       " CI ~normally [", round(confint_fit[i, 1], 3), ",", round(confint_fit[i, 2], 3), "]\n")
   }
 
@@ -594,7 +596,7 @@ cat("  RSS model sine curve:", round(RSS(temps$T_AVG, temps$BAR), 2), "\n")
 cat("  MAE model fit:", round(MAE(temps$BAR, temps$T_AVG), 2), "\n")
 
 # fix the trend by using the linear trend
-temps$Trend <- temps$Trend %>% na.fill(params["a"] + params["b"] * 1:lookback)
+temps$Trend <- temps$Trend %>% na.fill(MOD_params["a"] + MOD_params["b"] * 1:lookback)
 ```
 
 ## Visualization of results
@@ -806,12 +808,9 @@ temps_OU %>%
 ```
 
 # Modeling volatility
+Now that i have the deterministic part of the model complete I need to model the volatility the first step was looking if there is any relation between day-of-year and volatility across the days of the year to try and model.
 
-## Polynomial Regression:
-
-Fit polynomial curves to model the relationship between day-of-year and volatility.
-
-```{r vol modeling}
+```{r vol modeling, fig.width= 9}
 # Create a dataframe with temperature and date components
 temp_t <- data.frame(
   Date = temps$DAY,  # Assuming the index is a proper Date object
@@ -820,24 +819,29 @@ temp_t <- data.frame(
   month = month(temps$DAY)
 )
 
-# 2. Calculate monthly volatility statistics
-vol1 <- temps %>%
-  group_by(YEAR, Month) %>%
-  summarise(
-    mean_temp = mean(Denoised, na.rm = TRUE),
-    std_temp = sd(Denoised, na.rm = TRUE)
-  ) %>%
-  ungroup()
+vol <- temps %>%
+  select(DAY, T_AVG) %>%
+  mutate(day = yday(DAY),
+        month = month(DAY)) %>%
+  group_by(day) %>%
+  summarise(mean = mean(T_AVG, na.rm = TRUE),
+            std = sd(T_AVG, na.rm = TRUE))
 
-# 5. Volatility Analysis
-    vol <- temps %>%
-      select(DAY, T_AVG) %>%
-      mutate(day = yday(DAY),
-            month = month(DAY)) %>%
-      group_by(day) %>%
-      summarise(mean = mean(T_AVG, na.rm = TRUE),
-                std = sd(T_AVG, na.rm = TRUE))
+quickplot(vol$std, type = geom_point)
 ```
+
+There are many models to try and use, I'm trying a couple to be thorough
+
+* B-splines
+* Polynomial regression 
+* Fourier transformation
+* Regime switch
+* Loess modeling 
+
+A good way is to look at both fit and complexity-adjusted metrics:
+  - RSS (Residual Sum of Squares): how close the fit is. Lower is better.
+  - AIC (Akaike Information Criterion): trade-off between fit and complexity. Lower is better.
+  - Visual inspection: sometimes a model with slightly worse AIC is much smoother/interpretable.
 
 ## B-splines
 
@@ -868,25 +872,47 @@ create_spline_plot <- function(knots, x, y) {
   aic <- length(x) * log(rss / length(x)) + 2 * knots
 
   # Create the plot
-  plots <- ggplot() +
+  plot <- ggplot() +
     geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
     geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
     ggtitle(paste("Knots #", knots, "\nRSS:", round(rss, 2), "AIC:", round(aic,2))) +
     labs(x = NULL, y = NULL)
-    theme_classic()+
-    theme(plot.title = element_text(size = 10, face = "bold"))
-  
-  return(plots)
+    theme_classic()
+
+  # Return both plot and metrics
+  return(list(
+    plot = plot,
+    knots = knots,
+    rss = rss,
+    aic = aic
+  ))
 }
 
-# Generate all the plots
-plots <- lapply(knots, create_spline_plot, x = x, y = y)
+results <- lapply(knots, create_spline_plot, x = x, y = y)
 
+plots <- lapply(results, function(x) x$plot)
 # Arrange and display the plots in a 2x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different B-splines models")
+
+spline_metrics_df <- data.frame(
+  parameter = sapply(results, function(x) x$knots),
+  rss = sapply(results, function(x) x$rss),
+  aic = sapply(results, function(x) x$aic)
+) %>% 
+    set_rownames(paste0("BSPL",1:9))
 ```
 
-## Polynomial models to fit volatility
+## Polynomial Regression:
+Polynomial regression is an extension of linear regression where the relationship between the independent variable(s) and the dependent variable is modeled as an $n-th$ degree polynomial. Polynomial regression allows for curvature by adding higher-order terms:
+$$y = \beta_0 + \beta_1 x + \beta_2 x^2 + \cdots + \beta_d x^d + \epsilon$$
+
+where $d$ is the degree of the polynomial.
+
+Temperature volatility (or variance in fluctuations) across the year often follows seasonal patterns: higher in transition months (spring/fall), lower in stable periods (summer/winter).
+
+These patterns are non-linear, so a simple straight-line regression won’t capture them.
+
+Polynomial regression lets you fit a smooth curve that adapts to rises and falls over the 366 days.
 
 ```{r polynomial, fig.width= 9}
 # Function to create polynomial model and plot
@@ -898,27 +924,53 @@ create_poly_plot <- function(degree, x, y) {
   
   # Calculate metrics
   rss <- sum(resid(model)^2)
-  aic <- AIC(model)
-  
+  n <- 366
+  aic <- n*log(rss/n)+2*degree
+  3
   # Create plot
-  ggplot() +
+  plot <- ggplot() +
     geom_point(aes(x, y), color = '#00962B', size = 1) +
     geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
     ggtitle(paste("Degree:", degree, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
-    labs(y = NULL, x = NULL)+
-    theme_classic()+
+    labs(y = NULL, x = NULL) +
+    theme_classic() +
     theme(plot.title = element_text(size = 10, face = "bold"))
-  }
+  
+  # Return both plot and metrics
+  return(list(
+    plot = plot,
+    degree = degree,
+    rss = rss,
+    aic = aic
+  ))
+}
 
-# Generate plots for degrees 1 through 9
+# Generate plots and store metrics for degrees 1 through 9
 degrees <- 1:9
-plots <- lapply(degrees, create_poly_plot, x = x, y = y)
+results <- lapply(degrees, create_poly_plot, x = x, y = y)
+
+# Extract plots
+plots <- lapply(results, function(x) x$plot)
 
 # Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different polynomial models")
+
+# Extract metrics into a data frame
+poly_metrics_df <- data.frame(
+  parameter = sapply(results, function(x) x$degree),
+  rss = sapply(results, function(x) x$rss),
+  aic = sapply(results, function(x) x$aic)) %>% 
+    set_rownames(paste0("POLY",1:9))
 ```
 
 ## Fourier transforms
+
+The Fourier transform is a mathematical technique that breaks down any signal (like your volatility over days) into a sum of sinusoids (sines and cosines) at different frequencies.
+Idea: instead of fitting polynomials or splines, we represent the curve as a combination of waves:
+$$f(x) \approx a_0 + \sum_{k=1}^n \big( a_k \cos(2\pi kx/T) + b_k \sin(2\pi kx/T) \big)$$
+
+This is especially powerful for seasonal or periodic data like temperature volatility, because cycles are naturally captured by sines and cosinesThis is especially powerful for seasonal or periodic data like temperature volatility, because cycles are naturally captured by sines and cosines
+
 
 ```{r fourier int}
 fourier_series <- function(x, n_terms, period = 365.25) {
@@ -939,7 +991,6 @@ fourier_series(1:366, 3) %>%
     subtitle = "Order 3 so 7 components",
     xlab = "Day of the year"
   )
-
 ```
 
 ```{r fourier plot, fig.width= 9}
@@ -953,76 +1004,188 @@ create_fourier_plot <- function(n_terms, x, y) {
 
   # Calculate metrics
   rss <- sum(resid(fourier_fit)^2)
-  aic <- AIC(fourier_fit)
+  n <- 366
+  aic <- n*log(rss/n)+2*n_terms
 
   # Create plot
-  ggplot(data = data.frame(), aes(x = x)) +
+  plot <- ggplot(data = data.frame(), aes(x = x)) +
     geom_point(aes(y = y), color = 'orangered3', size = 1) +
     geom_line(aes(y = fourier), color = 'black', linewidth = 1) +
     ggtitle(paste("Order:", n_terms, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
     labs(y = NULL, x = NULL) +
-    theme_classic() +
-    theme(plot.title = element_text(size = 10, face = "bold"))
+    theme_classic() 
+
+    # Return both plot and metrics
+  return(list(
+    plot = plot,
+    order = n_terms,
+    rss = rss,
+    aic = aic
+  ))
 }
 
 # Generate plots for degrees 1 through 9
 order <- c(0:8)
-plots <- lapply(order, create_fourier_plot, x = x, y = y)
+
+results <- lapply(order, create_fourier_plot, x = x, y = y)
+
+plots <- lapply(results, function(x) x$plot)
 
 # Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3,
   left = "Standard deviation of temperatures",
   bottom = "Day of the year",
   top = "Different Fourier Series models")
+
+# Extract metrics into a data frame
+fourier_metrics_df <- data.frame(
+  parameter = sapply(results, function(x) x$order),
+  rss = sapply(results, function(x) x$rss),
+  aic = sapply(results, function(x) x$aic)) %>% 
+    set_rownames(paste0("FOU",1:9))
 ```
 
 ## Regime switch
+
+
 
 ```{r Regime switch, fig.width= 9}
 #| warnings: False
 library(changepoint, quietly = T, warn.conflicts = F)
 create_changepoint_plot <- function(n_breaks, x, y) {
-  # Detect changepoints in variance with fixed number of breaks
-  cp <- cpt.var(y, method = "PELT", Q = n_breaks)
-
-  # Get regime-wise standard deviation
+  # Detect changepoints in variance with fixed number of beaks
+  cp <- cpt.var(y, method = "SegNeigh", Q = n_breaks, penalty = "Manual")
+  segs <- c(1, cpts(cp), length(y) + 1)
   regime_sd <- rep(NA, length(y))
-  segs <- c(1, cpts(cp), length(y))
+
   for (i in 1:(length(segs) - 1)) {
     idx <- segs[i]:(segs[i + 1] - 1)
     regime_sd[idx] <- sd(y[idx])
   }
 
+
   # RSS (within segment variance sum)
   rss <- sum((y - na.omit(regime_sd))^2)
+  n <- 366
+  aic <- n*log(rss/n)+2*n_breaks
 
   # Build plot
   data_plot <- data.frame(x = x, y = y, sd_fit = regime_sd)
-  ggplot(data_plot, aes(x = x)) +
+  plot <- ggplot(data_plot, aes(x = x)) +
     geom_point(aes(y = y), color = 'purple4', size = 1) +
     geom_line(aes(y = sd_fit), color = 'black', linewidth = 1) +
-    ggtitle(paste("Breaks:", n_breaks, "\nRSS:", round(rss, 2))) +
+    ggtitle(paste("Breaks:", n_breaks, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
     theme_classic() +
-    labs(y = NULL, x = NULL) +
-    theme(plot.title = element_text(size = 10, face = "bold"))
+    labs(y = NULL, x = NULL) 
+
+    # Return both plot and metrics
+  return(list(
+    plot = plot,
+    breaks = n_breaks,
+    rss = rss,
+    aic = aic
+  ))
 }
 # Create 9 plots for rhe breaks
 breaks <- c(1, 2, 4, 8, 10, 12, 20, 30, 40)
-plots <- suppressWarnings(lapply(breaks, create_changepoint_plot, x = x, y = y))
+results <- suppressWarnings(lapply(breaks, create_changepoint_plot, x = x, y = y))
+
+plots <- lapply(results, function(x) x$plot)
 
 suppressWarnings(grid.arrange(grobs = plots, nrow = 3, ncol = 3,
   left = "Standard deviation of temperatures",
   bottom = "Day of the year",
   top = "Variance Regime Switching Models"))
+
+# Extract metrics into a data frame
+reg_metrics_df <- data.frame(
+  parameter = sapply(results, function(x) x$breaks),
+  rss = sapply(results, function(x) x$rss),
+  aic = sapply(results, function(x) x$aic)) %>% 
+    set_rownames(paste0("REG",1:9))
+
+
 ```
+
+## Loess modelling 
+
+```{r loess, fig.width= 9}
+create_loess_plot <- function(span_val, x, y) {
+  # Fit LOESS model
+  loess_fit <- loess(y ~ x, span = span_val)
+  loess_pred <- predict(loess_fit, newdata = data.frame(x = x))
+  
+  # Residual sum of squares
+  rss <- sum((y - loess_pred)^2)
+  
+  # Effective degrees of freedom from loess
+  df <- loess_fit$enp  # "equivalent number of parameters"
+  n <- 366
+  
+  # Compute pseudo-AIC
+  aic <- n * log(rss/n) + 2 * df
+  
+  # Create plot
+  plot <- ggplot(data = data.frame(x = x, y = y, fit = loess_pred), aes(x = x)) +
+    geom_point(aes(y = y), color = 'violetred4', size = 1) +
+    geom_line(aes(y = fit), color = 'black', linewidth = 1) +
+    ggtitle(paste("Span:", span_val, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
+    labs(y = NULL, x = NULL) +
+    theme_classic()
+  
+  # Return both plot and metrics
+  return(list(
+    plot = plot,
+    span = span_val,
+    rss = rss,
+    aic = aic
+  ))
+}
+
+# Example: spans from 0.1 to 0.9
+spans <- seq(0.1, 0.9, by = 0.1)
+
+# Run for all spans
+results_loess <- lapply(spans, create_loess_plot, x = x, y = y)
+
+# Extract plots
+plots_loess <- lapply(results_loess, function(x) x$plot)
+
+# Arrange in 3x3 grid
+grid.arrange(grobs = plots_loess, nrow = 3, ncol = 3,
+            left = "Standard deviation of temperatures",
+            bottom = "Day of the year",
+            top = "Different LOESS smoothing models")
+
+# Extract metrics into data frame
+loess_metrics_df <- data.frame(
+  parameter = sapply(results_loess, function(x) x$span),
+  rss = sapply(results_loess, function(x) x$rss),
+  aic = sapply(results_loess, function(x) x$aic)) %>% 
+    set_rownames(paste0("LOESS",1:9))
+
+```
+
+
+```{r}
+all_metrics <- rbind(
+  spline_metrics_df,
+  poly_metrics_df,
+  fourier_metrics_df,
+  reg_metrics_df,
+  loess_metrics_df)
+
+quickbarplot(all_metrics$aic)
+```
+
 
 ```{r AR on vol_DOY}
 # 3. Print long-term volatility metrics
-cat("Trend or long term volatility is easy: ~", round(mean(vol1$std_temp, na.rm = TRUE), 3), "\n")
-cat("Gamma is:", round(sd(vol1$std_temp, na.rm = TRUE), 3), "\n")
+cat("Trend or long term volatility is easy: ~", round(mean(vol$std, na.rm = TRUE), 3), "\n")
+cat("Gamma is:", round(sd(vol$std, na.rm = TRUE), 3), "\n")
 
 # 4. Fit AR(1) model for mean reversion rate
-ar_model <- arima(vol1$std_temp, order = c(1, 0, 0), include.mean = FALSE)
+ar_model <- arima(vol$std, order = c(1, 0, 0), include.mean = FALSE)
 coef <- ar_model$coef
 residuals <- ar_model$residuals
 
@@ -1037,10 +1200,10 @@ $$
 # Montecarlo simulations
 
 ```{r MNC}
-a <- params[1]
-b <- params[2]
-theta <- atan2(params[3], params[4])
-alpha <- sqrt(params[3]^2 + params[4]^2)
+a <- MOD_params[1]
+b <- MOD_params[2]
+theta <- atan2(MOD_params[3], MOD_params[4])
+alpha <- sqrt(MOD_params[3]^2 + MOD_params[4]^2)
 kappa <- as.double(kappa)
 
 data.frame(a = a, b = b, theta = theta, alpha = alpha, kappa = kappa)
@@ -1223,8 +1386,8 @@ sim_results$mc_sims %>%
 no_sims <- 100000
 
 # Define winter and summer dates (Southern Hemisphere)
-trading_dates_winter <- as.Date("2025-10-01")
-trading_dates_summer <- as.Date("2025-04-01")
+trading_dates_winter <- as.Date("2025-04-01")
+trading_dates_summer <- as.Date("2025-10-01")
 
 # Run simulations
 sim_results_winter <- monte_carlo_temp(trading_dates_winter, Tbar_params, volatility, first_ord, M = no_sims)
@@ -1420,7 +1583,7 @@ model_formula <- function(t, a, b, a1, b1) {
 
 forecast_N <- 30
 new_t <- max(temps$NUM_DAY) + forecast_N  # forecast_N days after last observation
-predicted_T <- model_formula(new_t, params["a"], params["b"], params["alpha"], params["theta"])
+predicted_T <- model_formula(new_t, MOD_params["a"], MOD_params["b"], MOD_params["alpha"], MOD_params["theta"])
 cat("predicted temperature for", as.character(max(temps$DAY)+forecast_N), "=", predicted_T)
 
 arima_model <- Arima(temps$RESID, order = c(2, 0, 0), include.mean = FALSE)
@@ -1431,7 +1594,7 @@ future_dates <- seq(max(temps$DAY), by = "day", length.out = forecast_N)
 future_t <- as.numeric(difftime(future_dates, first_date, units = "days"))
 
 # Deterministic part
-deterministic_part <- model_formula(future_t, params["a"], params["b"], params["alpha"], params["theta"])
+deterministic_part <- model_formula(future_t, MOD_params["a"], MOD_params["b"], MOD_params["alpha"], MOD_params["theta"])
 
 # Stochastic part (residuals)
 stochastic_part <- future_residuals$mean
@@ -1590,6 +1753,7 @@ minn <- min(FD$LON_MIN, FD$MIL_MIN)
 maxx <- max(FD$LON_MAX, FD$MIL_MAX)
 
 grid.arrange(
+  top = "Boxplot for all months across the years",
   nrow = 1,
   DATASET %>%
     select(Month, T_AVG) %>%
@@ -1597,7 +1761,7 @@ grid.arrange(
     ggplot(aes(x = Month, y = T_AVG, group = Month)) +
     geom_boxplot(fill = "lightskyblue", outliers = FALSE, staplewidth = 0.8) +
     scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
-    labs(title = "London - Boxplot for all months across the years", x = NULL, y = NULL) +
+    labs(title = "London", x = NULL, y = NULL) +
     ylim(minn, maxx)
     ,
 
@@ -1607,7 +1771,7 @@ grid.arrange(
     ggplot(aes(x = Month, y = T_AVG, group = Month)) +
     geom_boxplot(fill = "darkorange2", outliers = FALSE, staplewidth = 0.8) +
     scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
-    labs(title = "Milan - Boxplot for all months across the years", x = NULL, y = NULL) +
+    labs(title = "Milan", x = NULL, y = NULL) +
     ylim(minn, maxx)
 )
 ```
@@ -1618,4 +1782,6 @@ grid.arrange(
 beepr::beep(sound = 4)
 rsconnect::writeManifest()
 ```
+
+
 
