@@ -309,9 +309,7 @@ print("animated plot in html")
 }
 ```
 
-```{r}
-library(tidyverse)
-
+```{r polar viz}
 pivot_df <- DATASET %>%
   mutate(t_diff = c(NA, diff(T_AVG))) %>% 
   select(Month, YEAR, t_diff) %>%
@@ -368,6 +366,68 @@ t_data %>%
       title = "Global temperature change (1981-2025)")
 
 ```
+
+## Sidequest: overlap of the dataset
+
+One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
+
+```{r each year overlapped}
+pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_AVG) %>%
+  pivot_wider(names_from = YEAR, values_from = T_AVG)
+
+
+MAX_pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_MAX) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MAX)
+
+MIN_pivot_df <- DATASET %>%
+  select(DOY, YEAR, T_MIN) %>%
+  pivot_wider(names_from = YEAR, values_from = T_MIN)
+
+DATASET %>%
+  select(Month, T_AVG) %>%
+  group_by(Month) %>% 
+  ggplot(aes(x = Month, y = T_AVG, group = Month)) +
+    geom_boxplot(fill = "gray") +
+    scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
+    labs(title = "Boxplot for all months across the years", x = NULL, y = NULL)
+```
+
+### How is this year compared to the rest
+
+this dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
+
+```{r avg hottness}
+ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
+  geom_line() +
+  labs(title = "All years overlapped", x = "Day of the year", y = "Index level of returns")
+
+
+THISYEAR <- data.frame(
+  c(DATASET[DATASET$YEAR == 2025, ]["T_MAX"]),
+  c(DATASET[DATASET$YEAR == 2025, ]["T_AVG"]),
+  c(DATASET[DATASET$YEAR == 2025, ]["T_MIN"])
+)
+
+cbind(pivot_df,
+      "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
+      "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
+      "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)) %>%
+  round(2) %>%
+  ggplot(aes(x = DOY)) +
+    geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = 0.2) +
+    geom_line(aes(y = MEAN, color = "MEAN"), linewidth = 1) +
+    geom_line(aes(y = pivot_df$`2025`, color = "AVG_Current"), linewidth = 1.3) +
+    geom_line(aes(y = MAX_pivot_df$`2025`, color = "MAX_Current"), linewidth = 0.6, alpha = 1) +
+    geom_line(aes(y = MIN_pivot_df$`2025`, color = "MIN_Current"), linewidth = 0.6, alpha = 1) +
+  scale_color_manual(name = NULL, values = c(MEAN = "orange2", AVG_Current = "olivedrab", 
+                                                MIN_Current = "lightblue", MAX_Current = "indianred")) +
+  labs(title = "Is this year hotter on average?", y = NULL, x = NULL)+
+  theme(legend.position = "bottom")
+```
+
+
 
 ## Seasonal analysis
 
@@ -461,8 +521,14 @@ DATASET_seas %>%
 ## Long term trends
 
 ```{r LT-trends}
-SMA(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term trend")
-runSD(DATASET$T_AVG, lookback) %>% quickplot(show_legend = F, title = "Long term Standard deviation")
+quickplot(SMA(DATASET$T_AVG, lookback), show_legend = F, title = "Long term Rolling average",
+  x_start = min(DATASET$YEAR),x_step = 1 / 365.25
+)
+
+quickplot(
+  runSD(DATASET$T_AVG, lookback), show_legend = F, title = "Long term Standard deviation",
+  x_start = min(DATASET$YEAR), x_step = 1 / 365.25
+)
 ```
 
 # Seasonal decomposition
@@ -532,7 +598,6 @@ apply_convolution <- function(x, kernel) {
   return(filtered)
 }
 
-# DENOISED - convolution with a window of 90 days
 kernel <- dnorm(-3:3)
 data.frame("Gaussian_Kernel" = round(kernel, 10))
 
@@ -753,7 +818,7 @@ The size of the noise is controlled by $\sigma$, which is the volatility paramet
 temps_OU <- temps
 # Define parameters for the OU process
 kappa <- 1-arima(temps_OU$RESID, order = c(1,0,0))$coef[1]  # Mean-reversion rate
-sigma <- 0.1                                                # Volatility of the process
+sigma <- sd(temps$RESID, na.rm = TRUE)                      # Volatility of the process
 dt <- 1                                                     # Time step (daily data)
 
 cat("Kappa is estimated as:", round(kappa,4))
@@ -819,7 +884,7 @@ temp_t <- data.frame(
   month = month(temps$DAY)
 )
 
-vol <- temps %>%
+vol_df <- temps %>%
   select(DAY, T_AVG) %>%
   mutate(day = yday(DAY),
         month = month(DAY)) %>%
@@ -829,9 +894,9 @@ vol <- temps %>%
 
 # just a shorthand for reference 
 x <- 1:366
-y <- vol$std
+y <- vol_df$std
 
-quickplot(vol$std, type = geom_point)
+quickplot(vol_df$std, type = geom_point, show_legend = F, xlab = "Day of the year", ylab = "Temperature", title = "Temperature volatility")
 ```
 
 The volatilty definitely has a shape and so we can try and model it with a deterministic model. There are many models to try and use, I'm trying a bunch to be thorough:
@@ -866,12 +931,10 @@ create_poly_plot <- function(degree, x, y) {
   model <- lm(y ~ poly(x, degree, raw = TRUE))
   yfit <- predict(model, data.frame(x = x))
   
-  # Calculate metrics
   rss <- sum(resid(model)^2)
   n <- 366
   aic <- n*log(rss/n)+2*degree
-  3
-  # Create plot
+
   plot <- ggplot() +
     geom_point(aes(x, y), color = '#00962B', size = 1) +
     geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
@@ -880,7 +943,6 @@ create_poly_plot <- function(degree, x, y) {
     theme_classic() +
     theme(plot.title = element_text(size = 10, face = "bold"))
   
-  # Return both plot and metrics
   return(list(
     plot = plot,
     degree = degree,
@@ -889,14 +951,12 @@ create_poly_plot <- function(degree, x, y) {
   ))
 }
 
-# Generate plots and store metrics for degrees 1 through 9
 degrees <- 1:9
 results <- lapply(degrees, create_poly_plot, x = x, y = y)
 
 # Extract plots
 plots <- lapply(results, function(x) x$plot)
 
-# Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different polynomial models")
 
 # Extract metrics into a data frame
@@ -904,7 +964,7 @@ poly_metrics_df <- data.frame(
   parameter = sapply(results, function(x) x$degree),
   rss = sapply(results, function(x) x$rss),
   aic = sapply(results, function(x) x$aic)) %>% 
-    set_rownames(paste0("POLY",1:9))
+    set_rownames(paste0("Polynomial",1:9))
 ```
 
 ## Fourier transforms
@@ -945,12 +1005,10 @@ create_fourier_plot <- function(n_terms, x, y) {
   fourier_fit <- lm(y ~ ., data = model_data)
   fourier <- predict(fourier_fit, newdata = model_data)
 
-  # Calculate metrics
   rss <- sum(resid(fourier_fit)^2)
   n <- 366
   aic <- n*log(rss/n)+2*n_terms
 
-  # Create plot
   plot <- ggplot(data = data.frame(), aes(x = x)) +
     geom_point(aes(y = y), color = 'orangered3', size = 1) +
     geom_line(aes(y = fourier), color = 'black', linewidth = 1) +
@@ -967,14 +1025,12 @@ create_fourier_plot <- function(n_terms, x, y) {
   ))
 }
 
-# Generate plots for degrees 1 through 9
 order <- c(0:8)
 
 results <- lapply(order, create_fourier_plot, x = x, y = y)
 
 plots <- lapply(results, function(x) x$plot)
 
-# Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3,
   left = "Standard deviation of temperatures",
   bottom = "Day of the year",
@@ -985,7 +1041,7 @@ fourier_metrics_df <- data.frame(
   parameter = sapply(results, function(x) x$order),
   rss = sapply(results, function(x) x$rss),
   aic = sapply(results, function(x) x$aic)) %>% 
-    set_rownames(paste0("FOU",1:9))
+    set_rownames(paste0("Fourier",1:9))
 ```
 
 
@@ -996,20 +1052,14 @@ It is a model with excellent numerical stability (very hard to create overfittti
 
 ```{r B-splines, fig.width= 9}
 library(splines)
-# Define the number of knots
-knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
-x <- 1:366
-# Function to create a spline model and plot
 create_spline_plot <- function(knots, x, y) {
   # Fit the spline model
   spline_model <- lm(y ~ bs(x, knots = knots))
   yfit <- predict(spline_model, data.frame(x = x))
   
-  # Calculate Residual Sum of Squares (RSS)
   rss <- sum((y - yfit)^2)
   aic <- length(x) * log(rss / length(x)) + 2 * knots
 
-  # Create the plot
   plot <- ggplot() +
     geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
     geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
@@ -1026,10 +1076,11 @@ create_spline_plot <- function(knots, x, y) {
   ))
 }
 
+knots <- c(1, 3, 5, 10, 15, 20, 30, 50, 80)
 results <- lapply(knots, create_spline_plot, x = x, y = y)
 
 plots <- lapply(results, function(x) x$plot)
-# Arrange and display the plots in a 2x3 grid
+
 grid.arrange(grobs = plots, nrow = 3, ncol = 3, left = "Standard deviation of temperatures", bottom = "Day of the year", top = "Different B-splines models")
 
 spline_metrics_df <- data.frame(
@@ -1037,7 +1088,7 @@ spline_metrics_df <- data.frame(
   rss = sapply(results, function(x) x$rss),
   aic = sapply(results, function(x) x$aic)
 ) %>% 
-    set_rownames(paste0("BSPL",1:9))
+    set_rownames(paste0("B-Spline",1:9))
 ```
 
 
@@ -1052,46 +1103,37 @@ the bandwidth (h) is the control term
 Small h: More wiggly, follows data closely (high variance, low bias)
 Large h: Smoother, averages over more points (low variance, high bias)
 
-```{r}
-create_kernel_plot <- function(x, y, bandwidth) {
-  # Nadaraya-Watson kernel regression
-  kernel_smooth <- function(x_eval, x_data, y_data, h_val=10) {
+```{r kernel smooth} 
+kernel_smooth <- function(x_eval, x_data, y_data, h_val=10) {
     weights <- exp(-0.5 * ((x_eval - x_data) / h_val)^2)
     weights <- weights / sum(weights)
     return(sum(weights * y_data))
-  }
+}
+
+create_kernel_plot <- function(x, y, bandwidth) {  
+  y_pred <- sapply(x, function(xi) kernel_smooth(xi, x, y, bandwidth))
   
-  y_pred <- sapply(x, function(xi) kernel_smooth(xi, x, y, ))
-  
-  # Calculate metrics
   rss <- sum((y - y_pred)^2)
   n <- length(y)
-  # Rough approximation of degrees of freedom for kernel smoother
-  edf <- n / (1 + (bandwidth/sd(x))^2)
   aic <- n * log(rss/n) + 2*bandwidth
   
   data_plot <- data.frame(x = x, y = y, y_pred = y_pred)
   
   plot <- ggplot(data_plot, aes(x = x)) +
-    geom_point(aes(y = y), color = 'purple4', size = 1, alpha = 0.7) +
+    geom_point(aes(y = y), color = 'darkolivegreen4', size = 1, alpha = 0.7) +
     geom_line(aes(y = y_pred), color = 'black', linewidth = 1.2) +
     ggtitle(paste("Bandwidth:", bandwidth, "\nRSS:", round(rss, 2), "AIC:", round(aic, 2))) +
-    theme_classic() +
-    labs(y = "Temperature", x = "Day of Year")
-  
+    labs(y = NULL, x = NULL) +
+    theme_classic()   
   return(list(plot = plot, rss = rss, aic = aic, bandwidth = bandwidth))
 }
 
-# Example: spans from 0.1 to 0.9
 width <- floor(seq(5, 50, length.out = 9))
-
-# Run for all bandwidth
 results <- lapply(width, create_kernel_plot, x = x, y = y)
 
 # Extract plots
 plots <- lapply(results, function(x) x$plot)
 
-# Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3,
             left = "Standard deviation of temperatures",
             bottom = "Day of the year",
@@ -1102,7 +1144,7 @@ kernel_metrics_df <- data.frame(
   parameter = sapply(results, function(x) x$bandwidth),
   rss = sapply(results, function(x) x$rss),
   aic = sapply(results, function(x) x$aic)) %>% 
-    set_rownames(paste0("KERN",1:9))
+    set_rownames(paste0("Kernel-smoothing",1:9))
 ```
 
 
@@ -1119,17 +1161,13 @@ create_loess_plot <- function(span_val, x, y) {
   loess_fit <- loess(y ~ x, span = span_val)
   loess_pred <- predict(loess_fit, newdata = data.frame(x = x))
   
-  # Residual sum of squares
   rss <- sum((y - loess_pred)^2)
   
   # Effective degrees of freedom from loess
   df <- loess_fit$enp  # "equivalent number of parameters"
   n <- 366
-  
-  # Compute pseudo-AIC
   aic <- n * log(rss/n) + 2 * df
   
-  # Create plot
   plot <- ggplot(data = data.frame(x = x, y = y, fit = loess_pred), aes(x = x)) +
     geom_point(aes(y = y), color = 'violetred4', size = 1) +
     geom_line(aes(y = fit), color = 'black', linewidth = 1) +
@@ -1146,16 +1184,12 @@ create_loess_plot <- function(span_val, x, y) {
   ))
 }
 
-# Example: spans from 0.1 to 0.9
 spans <- seq(0.1, 0.9, by = 0.1)
-
-# Run for all spans
 results <- lapply(spans, create_loess_plot, x = x, y = y)
 
 # Extract plots
 plots <- lapply(results, function(x) x$plot)
 
-# Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3,
             left = "Standard deviation of temperatures",
             bottom = "Day of the year",
@@ -1176,17 +1210,14 @@ GAM models fit smooth, flexible curves to data by combining multiple smooth func
 A basis functions is needed to control the curvature, I'm using as the basis functions cyclic cubic regression splines `bs = "cc"`, a penalized cubic regression splines up to second derivative.
 $$ y = β_0 + f_1(x_1) + f_2(x_2) + ε$$
 
-```{r}
+```{r GAM, fig.width= 9}
 library(mgcv, warn.conflicts = F, quietly = T)
 
 create_gam_plot <- function(x, y, k_value) {
   # Fit GAM with cyclic smooth for seasonal data
   gam_model <- gam(y ~ s(x, bs = "cc", k = k_value), weights = rep(1, length(y)))
-  
-  # Predict
   y_pred <- predict(gam_model)
   
-  # Calculate metrics
   rss <- sum((y - y_pred)^2)
   n <- 366
   edf <- sum(gam_model$edf)  # effective degrees of freedom
@@ -1205,16 +1236,12 @@ create_gam_plot <- function(x, y, k_value) {
   return(list(plot = plot, k_value = k_value, rss = rss, aic = aic))
 }
 
-# Example: spans from 0.1 to 0.9
 k_values <- floor(seq(1, 20, length.out = 9))
-
-# Run for all spans
 results <- lapply(k_values, create_gam_plot, x = x, y = y)
 
 # Extract plots
 plots <- lapply(results, function(x) x$plot)
 
-# Arrange in 3x3 grid
 grid.arrange(grobs = plots, nrow = 3, ncol = 3,
             left = "Standard deviation of temperatures",
             bottom = "Day of the year",
@@ -1231,7 +1258,7 @@ gam_metrics_df <- data.frame(
 ## Figuring out which is the best model 
 Now for the task of comparing the models as i 
 
-```{r}
+```{r best model}
 #| layout-ncol: 2
 comparison_df <- rbind(
   poly_metrics_df,
@@ -1252,16 +1279,39 @@ for (i in 1:6) {
     (apply(comparison_df[seq((i - 1) * 9 + 1, 9 * i), ], 2, mean))
   )
 }
-
-summary_comparison_df[, 1] <- c("Polynomial", "Fourier", "B-spline", "Kernel", "Loess", "GAM")
+summary_comparison_df[, 1] <- c(
+  "Polynomial",
+  "Fourier",
+  "B-spline",
+  "Kernel",
+  "Loess",
+  "GAM"
+)
 colnames(summary_comparison_df) <- c("Model", "RSS", "AIC")
+summary_comparison_df$AIC <- abs(summary_comparison_df$AIC)
+
 
 summary_comparison_df$RSS %>%
   set_names(summary_comparison_df$Model) %>%
-  quickbarplot(title = "RSS value of all models", palette = "navyblue")
+  quickbarplot(title = "RSS value of all models", palette = "navyblue") +
+  theme(plot.title = element_text(size = 20)) +
+  coord_cartesian(
+    ylim = c(
+      min(summary_comparison_df$RSS) * 0.8,
+      max(summary_comparison_df$RSS) * 1.1
+    )
+  )
+
 summary_comparison_df$AIC %>%
   set_names(summary_comparison_df$Model) %>%
-  quickbarplot(title = "AIC value of all models", palette = "darkred")
+  quickbarplot(title = "AIC value of all models", palette = "darkred") +
+  theme(plot.title = element_text(size = 20)) +
+  coord_cartesian(
+    ylim = c(
+      min(summary_comparison_df$AIC) * 0.9,
+      max(summary_comparison_df$AIC) * 1.05
+    )
+  )
 
 head(comparison_df[order(comparison_df$AIC), ]) %>%
   gt(rownames_to_stub = T) %>%
@@ -1271,16 +1321,31 @@ head(comparison_df[order(comparison_df$RSS), ]) %>%
   gt(rownames_to_stub = T) %>%
   opt_stylize(5, color = "green") %>%
   tab_header("Best model according to RSS")
+
+
+best_model <- comparison_df[which.min(comparison_df$AIC), ]
+best_model_name <- gsub("[0-9]", "", (rownames(best_model)))
+parameter <- switch(best_model_name,
+  "Polynomial" = "degrees",
+  "Fourier" = "order",
+  "B-Spline" = "knots",
+  "Kernel-smoothing" = "bandwidth",
+  "LOESS" = "span",
+  "GAM" = "k values",
+  stop("Unknown model: ", best_model_name) # error
+)
 ```
+
+so the best model is `{r} best_model_name` with `{r} parameter` = `{r} best_model$Parameter`. it has the lowest AIC at `{r} round(best_model$AIC,2)` value and the best RSS at `{r} round(best_model$RSS,2)`. so moving forward I will use that for the volatility modeling. 
 
 
 ```{r AR on vol_DOY}
 # 3. Print long-term volatility metrics
-cat("Trend or long term volatility is easy: ~", round(mean(vol$std, na.rm = TRUE), 3), "\n")
-cat("Gamma is:", round(sd(vol$std, na.rm = TRUE), 3), "\n")
+cat("Trend or long term volatility ~", round(mean(vol_df$std, na.rm = TRUE), 3), "\n")
+cat("Gamma is ~", round(sd(vol_df$std, na.rm = TRUE), 3), "\n")
 
 # 4. Fit AR(1) model for mean reversion rate
-ar_model <- arima(vol$std, order = c(1, 0, 0), include.mean = FALSE)
+ar_model <- arima(vol_df$std, order = c(1, 0, 0), include.mean = FALSE)
 coef <- ar_model$coef
 residuals <- ar_model$residuals
 
@@ -1288,22 +1353,28 @@ cat("Rate of mean reversion of volatility process is:", round(coef["ar1"], 3), "
 summary(ar_model)
 ```
 
+
+# Montecarlo simulations
+With the volatility component now modelled and a satisfactory result pulled from it it's time to move to the actual Montecarlo simulations for the temperature come the maturity date next year
+
+so starting from our model both the deterministic component as well as the volatilty component need to be simulated and added to create the full simulated dataset from all our previous work 
+
+using the Euler scheme approximation step in our modified Ornstein-Uhlenbeck model for temperature simulations
 $$
 dT_t=\left(\frac{dT_{bar}(t)}{dt}+κ(T_{bar}(t)−T_t)\right)dt + σ(t)\ dW_t
 $$
 
-# Montecarlo simulations
-
-```{r MNC}
+```{r Montecarlo model}
 a <- MOD_params[1]
 b <- MOD_params[2]
 theta <- atan2(MOD_params[3], MOD_params[4])
 alpha <- sqrt(MOD_params[3]^2 + MOD_params[4]^2)
 kappa <- as.double(kappa)
 
-data.frame(a = a, b = b, theta = theta, alpha = alpha, kappa = kappa)
+data.frame(a = a, b = b, theta = theta, alpha = alpha, kappa = kappa) %>%
+  set_rownames("value")
 
-# 1. Temperature Model Functions
+# Temperature Model Functions
 T_model <- function(x, a, b, alpha, theta) {
   omega <- 2 * pi / 365.25
   a + b * x + alpha * sin(omega * x + theta)
@@ -1313,95 +1384,83 @@ dT_model <- function(x, a, b, alpha, theta) {
   b + alpha * omega * cos(omega * x + theta)
 }
 
-# 2. Prepare Data
-if (inherits(temps$DAY, "Date")) {
-  first_ord <- as.numeric(temps$DAY[1])
-  temp_t$ordinal <- as.numeric(temps$DAY)
-} else {
-  temp_t$Date <- as.Date(temps$DAY)
-  first_ord <- as.numeric(temps$DAY[1])
-  temp_t$ordinal <- as.numeric(temps$DAY)
-}
-
-# 3. Apply Model with Given Parameters
+# Apply Model with Given Parameters
 Tbar_params <- list(a = a, b = b, alpha = alpha, theta = theta)
+temp_t$ordinal <- as.numeric(temps$DAY) - as.numeric(temps$DAY[1]) # x values
+first_ordinal_val <- as.numeric(temps$DAY[1])
 
 temps$model_fit <- T_model(
-  temp_t$ordinal - first_ord,
+  temp_t$ordinal,
   Tbar_params$a,
   Tbar_params$b,
   Tbar_params$alpha,
   Tbar_params$theta
 )
+```
 
-grid.arrange(
-  nrow = 2,
-  ncol = 2,
-  ggplot(temps %>% head(lookback), aes(x = DAY)) +
-    geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
-    geom_line(aes(y = model_fit), color = 'orange', linewidth = 2) +
-    labs(
-      title = paste0(
-        "Temperature Model Fit (First ",
-        lookback / 365,
-        " years)"
-      ),
-      x = NULL,
-      y = NULL
-    ),
+At this point we care more about the distribution than any single point not if there is auto-correlation in the residuals 
 
-  ggplot(temps %>% head(lookback), aes(x = DAY)) +
-    geom_line(aes(y = T_AVG - model_fit), color = 'black', linewidth = 0.5) +
-    labs(
-      title = paste0("Residuals (First ", lookback / 365, " years)"),
-      x = NULL,
-      y = NULL
-    ),
-
-  ggplot(temps %>% tail(lookback), aes(x = DAY)) +
-    geom_point(aes(y = T_AVG), color = 'royalblue', size = 0.5) +
-    geom_line(aes(y = model_fit), color = 'orange', linewidth = 2) +
-    labs(
-      title = paste0("Temperature Model Fit (Last ", lookback / 365, " years)"),
-      x = NULL,
-      y = NULL
-    ),
-
-  ggplot(temps %>% tail(lookback), aes(x = DAY)) +
-    geom_line(aes(y = T_AVG - model_fit), color = 'black', linewidth = 0.5) +
-    labs(
-      title = paste0("Residuals (Last ", lookback / 365, " years)"),
-      x = NULL,
-      y = NULL
-    )
+```{r}
+# Big switch function to get the correct model VALUES
+fit_volatility <- switch(
+  best_model_name,
+  "Polynomial" = {
+    yfit <- predict(lm(y ~ poly(x, parameter, raw = TRUE)), data.frame(x = x))
+  },
+  "Fourier" = {
+    model_data <- data.frame(y = y, fourier_series(1:366, n_terms = parameter))
+    fourier_fit <- lm(y ~ ., data = model_data)
+    yfit <- predict(fourier_fit, newdata = model_data)
+  },
+  "B-Spline" = {
+    yfit <- predict(lm(y ~ bs(x, knots = parameter)), data.frame(x = x))
+  },
+  "Kernel-smoothing" = {
+    yfit <- sapply(x, function(xi) kernel_smooth(xi, x, y, ))
+  },
+  "LOESS" = {
+    loess_fit <-
+      yfit <- predict(
+        loess(y ~ x, span = parameter),
+        newdata = data.frame(x = x)
+      )
+  },
+  "GAM" = {
+    yfit <- predict(gam(
+      y ~ s(x, bs = "cc", k = parameter),
+      weights = rep(1, length(y))
+    ))
+  },
+  # Default: error if unknown type
+  stop("Unknown model type: ", best_model_name)
 )
-
-
-# 6. Spline Fit for Volatility
-spline_fit <- function(knots, x, y) {
-  x_new <- seq(0, 1, length.out = knots + 2)[2:(knots + 1)]
-  knots_pos <- quantile(x, probs = x_new)
-  bspline <- lm(y ~ bs(x, knots = knots_pos, degree = 15))
-  predict(bspline, newdata = data.frame(x = x))
-}
-
-volatility <- spline_fit(15, vol$day, vol$std)
+vol_df$fvol <- yfit
 
 # Plot Volatility
-ggplot(vol, aes(x = day)) +
-  geom_point(aes(y = std, color = "Observed Volatility")) +
-  geom_line(aes(y = volatility, color = "Spline Fit"), linewidth = 1) +
+ggplot(vol_df, aes(x = day)) +
+  geom_point(aes(y = std, color = "Observed Volatility"), size = 2) +
+  geom_line(aes(y = fvol, color = "Estimate volatility"), size = 2) +
   scale_color_manual(
-    values = c("Observed Volatility" = "blue", "Spline Fit" = "black")
+    NULL,
+    values = c("Observed Volatility" = "blue", "Estimate volatility" = "black")
   ) +
   labs(
-    title = "Temperature Volatility by Day of Year",
+    title = paste(
+      "Temperature Volatility final using",
+      best_model_name,
+      best_model$Parameter
+    ),
     y = "Std Dev (°C)",
     x = "Day of Year"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
 
-# 7. Monte Carlo Simulation Functions
+Finally we can implement the functions for the simulation 
+```{r}
+#| code-fold: false
+# REAL Monte Carlo Simulation Functions
 euler_step <- function(row, kappa, M) {
   T_i <- ifelse(is.na(row$Tbar_shift), row$Tbar, row$Tbar_shift)
   T_det <- T_i + row$dTbar
@@ -1410,23 +1469,29 @@ euler_step <- function(row, kappa, M) {
   T_det + T_mrev + sigma
 }
 
-monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model, 
-                            first_ord, M = 1, kappa = 0.2430516) {
+monte_carlo_temp <- function(trading_dates, Tbar_params, vol_df, 
+                            first_ordinal, M = 1, kappa = ) {
   # Convert dates to numeric if needed
-  if (inherits(trading_dates, "Date")) {
-    trading_numeric <- as.numeric(trading_dates)
-  } else {
-    trading_dates <- as.Date(trading_dates)
-    trading_numeric <- as.numeric(trading_dates)
-  }
+  trading_numeric <- as.numeric(trading_dates)
+  kappa_val <- as.double(kappa)
 
   # Calculate Tbar and dTbar
-  x_vals <- trading_numeric - first_ord
-  Tbars <- T_model(x_vals, Tbar_params$a, Tbar_params$b, 
-                    Tbar_params$alpha, Tbar_params$theta)
+  x_vals <- trading_numeric - first_ordinal_val
+  Tbars <- T_model(
+    x_vals,
+    Tbar_params$a,
+    Tbar_params$b,
+    Tbar_params$alpha,
+    Tbar_params$theta
+  )
 
-  dTbars <- dT_model(x_vals, Tbar_params$a, Tbar_params$b, 
-                    Tbar_params$alpha, Tbar_params$theta)
+  dTbars <- dT_model(
+    x_vals,
+    Tbar_params$a,
+    Tbar_params$b,
+    Tbar_params$alpha,
+    Tbar_params$theta
+  )
 
   # Create simulation dataframe
   mc_temps <- data.frame(
@@ -1434,7 +1499,7 @@ monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model,
     Tbar = Tbars,
     dTbar = dTbars,
     day = yday(trading_dates),
-    vol = vol_model[yday(trading_dates)] # Directly add volatility
+    vol = data.frame(vol_df)$fvol[yday(trading_dates)] # Directly add volatility
   )
 
   # Add lagged Tbar
@@ -1443,7 +1508,7 @@ monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model,
   # Run simulations - modified apply call
   simulations <- sapply(1:nrow(mc_temps), function(i) {
     row <- mc_temps[i, ]
-    euler_step(row, kappa, M)
+    euler_step(row, kappa_val, M)
   })
 
   # Transpose and format results
@@ -1455,38 +1520,68 @@ monte_carlo_temp <- function(trading_dates, Tbar_params, vol_model,
     mc_sims = cbind(Date = trading_dates, as.data.frame(simulations))
   )
 }
+```
 
-# 8. Run Simulation
-trading_dates <- seq(as.Date("2022-09-01"), as.Date("2025-08-31"), by = "day")
+I then decided to check performance in a couple of ways, first just a one year completed model to see how the performance fairs against both the stricter 5-95 percentile and also a fair but more generous $±2σ$ from the simulated volatility.
+
+```{r}
+# Run Simulation
+one_year_trading_dates <- seq(as.Date("2024-12-31"), as.Date("2025-12-31"), by = "day")
 sim_results <- monte_carlo_temp(
-  trading_dates,
+  one_year_trading_dates,
   Tbar_params,
-  volatility,
-  first_ord,
+  vol_df,
+  first_ordinal_val,
   M = 5
 )
 
-# 9. Plot Simulation Results
-sim_results$mc_sims %>%
-  pivot_longer(-Date, names_to = "Simulation", values_to = "Temperature") %>%
-  ggplot(aes(x = Date, y = Temperature, color = Simulation)) +
-  geom_point(alpha = 0.7) +
-  labs(title = "Monte Carlo Temperature Simulations", y = "Temperature (°C)") +
-  theme_minimal() +
+piv_sim <- pivot_longer(sim_results$mc_sims, -Date, names_to = "Simulation", values_to = "Temperature")
+
+MIN_MAX <- data.frame(
+      "MIN" = apply_convolution(apply(pivot_df[-1], 1, quantile, 0.05 , na.rm = TRUE),dnorm(-3:3)),
+      "MAX" = apply_convolution(apply(pivot_df[-1], 1, quantile, 0.95, na.rm = TRUE),dnorm(-3:3))
+    )
+
+ggplot() +
+  geom_ribbon(data = MIN_MAX, aes(x = one_year_trading_dates, ymin = MIN, ymax = MAX), , alpha = 0.2) +
+  geom_ribbon(data = MIN_MAX, aes(x = one_year_trading_dates, ymin = MIN-2*vol_df$fvol, ymax = MAX+2*vol_df$fvol), alpha = 0, color = "red") +
+  geom_point(data = piv_sim, aes(x = Date, y = Temperature, color = Simulation), alpha = 0.7) +
+labs(title = "Monte Carlo Temperature Simulations", y = "Temperature (°C)", x = "Day of the year") +
+  guides(fill = "none") + 
   theme(legend.position = "bottom")
 ```
+
+They are scattered across the historical envelope, which suggests:
+*  The simulations are plausible given past variability.
+*  There’s no extreme bias (e.g., all simulations too hot or too cold).
+*  The model accounts for natural variability and uncertainty.
+*  The simulated values mostly stay within the historical bounds (plausible since we are taking the effects of climate change variations)
+*  A slight seasonal shift with spring and summer starting a bit later than historically
+
+Finally we can check the distribution of the future datapoints and check it against the historical perfomance, we can see that the distribution takes on a different shape from the historical models there appears to be a reasonably good fit for your temperature forecast model:
+
+- The general shape and spread of both distributions are well captured
+- The seasonal separation is clearly maintained
+- The peak positions are close to the historical data
+- The overall temperature ranges match well
+
+Areas where the fit could be improved:
+
+Your simulated winter distribution appears slightly more peaked/narrow than the historical winter data, suggesting the model may be underestimating temperature variability in winter
+The simulated summer distribution looks quite close to historical, which is good
+The tails of the distributions seem reasonably well represented
 
 ```{r MNC sym}
 # Set number of simulations
 no_sims <- 100000
 
-# Define winter and summer dates (Southern Hemisphere)
+# Define winter and summer dates
 trading_dates_winter <- as.Date("2025-04-01")
 trading_dates_summer <- as.Date("2025-10-01")
 
 # Run simulations
-sim_results_winter <- monte_carlo_temp(trading_dates_winter, Tbar_params, volatility, first_ord, M = no_sims)
-sim_results_summer <- monte_carlo_temp(trading_dates_summer, Tbar_params, volatility, first_ord, M = no_sims)
+sim_results_winter <- monte_carlo_temp(trading_dates_winter, Tbar_params, vol_df, first_ordinal_val, M = no_sims)
+sim_results_summer <- monte_carlo_temp(trading_dates_summer, Tbar_params, vol_df, first_ordinal_val, M = no_sims)
 
 
 # Extract results
@@ -1529,145 +1624,206 @@ ggplot(plot_data, aes(x = Temperature, fill = Season)) +
   labs(title = "Comparison of both historical and simulated", x = "Temperature (°C)", y = "Simulated Frequency") +
   theme(legend.position = "bottom") +
   scale_y_continuous(name = "Frequency", sec.axis = sec_axis(~ . * 0.07, name = "Historical Frequency"))
+
+
+grid.arrange( top = "Cumulative Density: Simulated vs Observed", nrow = 1,
+compare_cdf(unlist(mc_sims_summer), summer_dataset$T_AVG, "Summer dataset", "darkorange"),
+compare_cdf(unlist(mc_sims_winter), winter_dataset$T_AVG, "Winter dataset", "steelblue"))
 ```
 
-Florida's weather is rather temperate, so, we need to actually structure a contract that makes sense, generally the 18 degrees used is way too low for summers in a climate like florida as the lowest point simulated is `r round(min(as.numeric(sim_results_summer$mc_sims[-1])),2)`
+# Risk neutral pricing
+
+London's weather is rather chilly, so, we need to actually structure a contract that makes sense, generally the 18 degrees used is way too low for summers in a climate like florida as the lowest point simulated is `{r} round(min(as.numeric(sim_results_summer$mc_sims[-1])),2)`
 
 So we need to cmpute the probability that the option does not pay out (i.e., temperature Tn stays above 18°C).
 
 The probability is calculated as by counting how many simulated paths had $Tn$ ≥ 18°C where no payout would occur.
 
-```{r}
+```{r coldest summer}
 prob_sim_summer <- as.numeric(sim_results_summer$mc_sims[-1])
 
-for (n in 16:35) {
+for (n in 5:35) {
   payoffs <- ifelse(prob_sim_summer >= n, 0, n - prob_sim_summer)
   prob_no_payout <- mean(payoffs == 0) * 100
   cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
 }
 ```
 
-conversely in the winter has a much flatter distribution so its harded to figure out a good balance 
+Conversely in the winter has a much flatter distribution so its harder to figure out a good balance 
 
-```{r}
+```{r hottest winter}
 prob_sim_winter <- as.numeric(sim_results_winter$mc_sims[-1])
 
-for (n in 16:35) {
+for (n in 5:35) {
   payoffs <- ifelse(prob_sim_winter <= n, 0, n - prob_sim_winter)
   prob_no_payout <- mean(payoffs == 0) * 100
   cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
 }
 ```
 
+## Market model 
+The market for weather derivatives is a typical example of an incomplete market, because the underlying variable, the temperature, is not tradable. Therefore we have to consider the market price of risk $\lambda$, in order to obtain unique prices for such contracts.
 
+Since there is not yet a real market from which we can obtain prices, we assume for simplicity that the market price of risk is constant. Furthermore, we assume that we are given a risk free asset with constant interest rate $r$ and a contract that for each degree Celsius pays one unit of currency. Thus, under a martingale measure $\mathbb{Q}$, characterized by the market price of risk $\lambda$, our price process also denoted by $T_t$ satisfies the following dynamics:
 
-Using the ^TNX CBOE Interest Rate 10 Year
+So under risk neutral probability it becomes 
+$$
+dT_t^\mathbb{Q}=\left(\frac{d\bar T_t}{dt}+κ(\bar T_t−T_t)-\lambda\sigma _t \right)dt + σ_t\ dW^Q_t
+$$
 
-```{r}
-rates <- getSymbols("^TNX", from = Qdate(1,1,2020), auto.assign = F)
-na.approx(Cl(rates)) %>% quickplot("10 year rate as a proxy of the interest rate", plot_engine = "plotly")
-K <- 300 
-alpha <- 2500 
-``` 
+Compared to the physical probability measue
+$$
+dT_t^\mathbb{P}=\left(\frac{d\bar T_t}{dt}+κ(\bar T_t−T_t) \right)dt + σ_t\ dW^P_t
+$$
 
-```{r}
-# r <- as.numeric(last(Cl(rates))/100)
-# exp(-r*365)*1/no_sims*
+Only losing the $-\lambda\sigma _t$ term
+
+For simplicity's sake i'm just doing montecarlo valuation as some other researchers did not find much difference with analytical valuation of the Black and Scholes closed form stochastic calculus method
+
+```{r final model}
+temperature_option <- function(trading_dates, no_sims, Tbar_params, vol_df, 
+r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal = first_ordinal_val, option_type = "call", ref_temperature = 18) {
+  T_maturity_mod <- (max(as.numeric(trading_dates))-min(as.numeric(trading_dates)))/365.25
+  if (T_maturity==1) {
+    T_maturity <- T_maturity_mod
+  }
+  # Run Monte Carlo temperature simulation (assumes your R version exists)
+  mc_res <- monte_carlo_temp(trading_dates, Tbar_params, vol_df, first_ordinal, no_sims)
+  mc_sims <- mc_res$mc_sims   # matrix/dataframe of simulated temps
+  
+  M <- ncol(mc_sims)  # number of simulations
+  N <- nrow(mc_sims)  # number of time steps (not directly needed)
+  
+  mc_arr <- as.matrix(mc_sims[,-1])
+  
+  # Cooling degree days (CDD) or similar metric
+  DD <- colSums(pmax(ref_temperature - mc_arr, 0))
+  
+  # Option payoff
+  if (option_type == "call") {
+    Payoff <- alpha * pmax(DD - K, 0)
+  } else {
+    Payoff <- alpha * pmax(K - DD, 0)
+  }
+  
+  # Discounted expected payoff
+  C0 <- exp(-r * T_maturity) * mean(Payoff)
+  
+  # Standard error of estimator
+  sigma <- sqrt(sum((exp(-r * T_maturity) * Payoff - C0)^2) / (M - 1))
+  SE <- sigma / sqrt(M)
+  
+  return(list(price = C0, se = SE))
+}
+
+trading_dates <- seq(as.Date("2024-12-01"), as.Date("2025-03-01"), by = "day")
+
+temperature_option(trading_dates, 10000, Tbar_params, vol_df, r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal, option_type = "put", ref_temperature = 18)
+
+temperature_option(trading_dates, 10000, Tbar_params, vol_df, r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal, option_type = "call", ref_temperature = 18)
 ```
+
+```{r loop to get graph}
+(max(as.numeric(trading_dates))-min(as.numeric(trading_dates)))/365.25
+strikes <- seq(450,650, length.out = 20)
+ref_t <- 10
+nsim <- 10000
+alpha <- 5000
+prices_options <- data.frame(matrix(numeric(length(strikes)*4),ncol = 4)) %>% 
+  set_colnames(c("put", "call", "SE_put", "SE_call"))
+counter <- 1
+for (i in strikes) {
+ PUT <- temperature_option(trading_dates, nsim, Tbar_params, vol_df, ref_temperature = ref_t, K = i, option_type = "put", alpha = alpha)
+  CALL <- temperature_option(trading_dates, nsim, Tbar_params, vol_df, ref_temperature = ref_t, K = i, option_type = "call", alpha = alpha)
+
+  prices_options[counter,1] <- PUT$price
+  prices_options[counter,2] <- CALL$price
+  prices_options[counter,3] <- PUT$se
+  prices_options[counter,4] <- CALL$se
+counter <- counter+1
+}
+
+ggplot(cbind(prices_options,strikes), aes(x = strikes))+ 
+  geom_line(aes(y = put,  color = "put")) + 
+    geom_point(aes(y = put,  color = "put")) + 
+  geom_line(aes(y = call, color = "call")) +
+    geom_point(aes(y = call, color = "call")) +
+    labs(title = "Price charts of the Montecarlo options", y = "price")
+
+grid.arrange(top = "Standard error chart of the option at different strike prices",
+  ggplot(cbind(prices_options,strikes), aes(x = strikes))+ 
+    geom_col(aes(y = SE_put,  fill = "put")) + 
+    scale_fill_manual(NULL, values = "darkred") + 
+    ylab(NULL) + 
+    theme(legend.position = "bottom"),
+
+  ggplot(cbind(prices_options,strikes), aes(x = strikes))+ 
+    geom_col(aes(y = SE_call, fill = "call"))+
+    ylab(NULL) + 
+    scale_fill_manual(NULL, values = "darkblue")+ 
+    theme(legend.position = "bottom")
+)
+
+# Add this debug code:
+mc_res <- monte_carlo_temp(trading_dates, Tbar_params, vol_df, first_ordinal, 100)
+mc_sims <- mc_res$mc_sims   # matrix/dataframe of simulated temps
+M <- ncol(mc_sims)  # number of simulations
+N <- nrow(mc_sims)  # number of time steps (not directly needed)
+mc_arr <- as.matrix(mc_sims[,-1])
+
+dd_sample <- colSums(pmax(ref_t - mc_arr, 0))
+cat("DD stats: mean =", mean(dd_sample), ", range =", range(dd_sample), "\n")
+cat("Strikes in range?", any(strikes > min(dd_sample) & strikes < max(dd_sample)), "\n")
+```
+
+```{r}
+quickplot(mc_res$mc_sims[, -1][1:20], show_legend = F,
+  title = "Temperature Simulation Paths with the deterministic path") +
+  geom_line(
+    data = data.frame(x = 1:length(trading_dates), y = mc_res$mc_temps$Tbar),
+    aes(x = x, y = y),
+    color = "black",
+    linewidth = 2
+  )
+
+temp_diffs <- apply(mc_arr, 2, function(x) x - mc_res$mc_temps$Tbar)[, 1:20]
+daily_vol <- apply(mc_arr, 1, sd)
+
+grid.arrange(
+  quickplot(temp_diffs, title = "Difference from the deterministic path", show_legend = F),
+  quickplot(daily_vol, title = "Daily Volatility Across Simulations", show_legend = F)
+)
+cat("Mean deviation from seasonal average:", mean(abs(temp_diffs)), "\n")
+
+cat("Volatility range:", range(daily_vol), "\n")
+```
+
+## Greek Numerical Approximations
+Since we aren't dealing with plain vanilla options the olny option to calculate greks is to do them via Numerical Approximations using:
+
+$$
+\text{Greek} \approx \frac{V(x + \varepsilon) - V(x - \varepsilon)}{2\varepsilon}
+$$
+
+Where:
+
+$x$ is the input variable
+$\varepsilon$ is a small shift
+
+This is a finite difference approach: generalizable and useful when analytical Greeks are unavailable
+
+This method works for any option and it still assumes that the function is smooth and approximable locally, like the ones coming from the closed form solution of the Black and Scholes model but it  breaks down with large shocks.
+
+- Greeks give powerful local sensitivities
+- Good for quick P\&L estimates, hedging, and risk management
+
+
 
 # Sidequests
 
-## Sidequest: overlap of the dataset
-
-One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
-
-```{r each year overlapped}
-pivot_df <- DATASET %>%
-  select(DOY, YEAR, T_AVG) %>%
-  pivot_wider(names_from = YEAR, values_from = T_AVG)
-
-
-MAX_pivot_df <- DATASET %>%
-  select(DOY, YEAR, T_MAX) %>%
-  pivot_wider(names_from = YEAR, values_from = T_MAX)
-
-MIN_pivot_df <- DATASET %>%
-  select(DOY, YEAR, T_MIN) %>%
-  pivot_wider(names_from = YEAR, values_from = T_MIN)
-
-
-MEAN <- apply(pivot_df[-1], 1, mean, na.rm=TRUE)
-MEDIAN <- apply(pivot_df[-1], 1, median, na.rm=TRUE)
-IQR <- apply(pivot_df[-1], 1, IQR, na.rm=TRUE)
-SD <- apply(pivot_df[-1], 1, sd, na.rm=TRUE)
-
-data.frame(MEAN = MEAN,
-          MEDIAN = MEDIAN) %>% 
-  quickplot(title = "Mean and median across the year", xlab = "Day of the year", ylab = "Temperature")
-
-data.frame(IQR = SMA(IQR, n = 7),
-          SD = SD) %>% 
-  quickplot(title = "Standard deviation and Inter-quartile-range across the year",
-            subtitle = "IQR MA(7)", xlab = "Day of the year", ylab = "Temperature")
-
-data.frame(MAX = apply(pivot_df[-1], 1, max, na.rm=TRUE), 
-          MIN = apply(pivot_df[-1], 1, min, na.rm=TRUE)) %>%
-  mutate(AVG = (MAX + MIN)/2) %>% 
-  mutate(RANGE = MAX - MIN) %>% 
-  quickplot(title = "Range across the year", show_legend = T, xlab = "Day of the year", ylab = "Temperature")
-
-
-melt(pivot_df[-1], id.vars = NULL) %>% 
-  ggplot(aes(x = variable, y = value)) +
-    geom_boxplot(fill = "gray") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  
-    labs(title = "Boxplot for all years", x = NULL, y = NULL)
-
-DATASET %>%
-  select(Month, T_AVG) %>%
-  group_by(Month) %>% 
-  ggplot(aes(x = Month, y = T_AVG, group = Month)) +
-    geom_boxplot(fill = "gray") +
-    scale_x_continuous(breaks = seq(1, 12, by = 1), labels = month.abb) +
-    labs(title = "Boxplot for all months across the years", x = NULL, y = NULL)
-```
-
-### How is this year compared to the rest
-
-this dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
-
-```{r avg hottness}
-ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
-  geom_line() +
-  labs(title = "All years overlapped", x = "Day of the year", y = "Index level of returns")
-
-
-THISYEAR <- data.frame(
-  c(DATASET[DATASET$YEAR == 2025, ]["T_MAX"]),
-  c(DATASET[DATASET$YEAR == 2025, ]["T_AVG"]),
-  c(DATASET[DATASET$YEAR == 2025, ]["T_MIN"])
-)
-
-cbind(pivot_df,
-      "MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
-      "MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
-      "MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)) %>%
-  round(2) %>%
-  ggplot(aes(x = DOY)) +
-    geom_ribbon(aes(ymin = MIN, ymax = MAX), alpha = 0.2) +
-    geom_line(aes(y = MEAN, color = "MEAN"), linewidth = 1) +
-    geom_line(aes(y = pivot_df$`2025`, color = "AVG_Current"), linewidth = 1.3) +
-    geom_line(aes(y = MAX_pivot_df$`2025`, color = "MAX_Current"), linewidth = 0.6, alpha = 1) +
-    geom_line(aes(y = MIN_pivot_df$`2025`, color = "MIN_Current"), linewidth = 0.6, alpha = 1) +
-  scale_color_manual(name = NULL, values = c(MEAN = "orange2", AVG_Current = "olivedrab", 
-                                                MIN_Current = "lightblue", MAX_Current = "indianred")) +
-  labs(title = "Is this year hotter on average?", y = NULL, x = NULL)+
-  theme(legend.position = "bottom")
-```
-
 ## Sidequest: predicting temperatures in the future
 
-Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature one month from now and
+Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature one month from now 
 
 ```{r forecast compared to real}
 #| warnings: False
@@ -1729,120 +1885,56 @@ ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+
 ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
 ```
 
-```{r}
-# Assuming trading_dates and sim_length already defined
-x_vals <- as.numeric(trading_dates) - first_ord
-Tbar_vals <- T_model(x_vals, a, b, alpha, theta)
-dTbar_vals <- dT_model(x_vals, a, b, alpha, theta)
-sigma_vals <- volatility[yday(trading_dates)]
-
-data.frame(
-  x_vals = x_vals,
-  Tbar_vals = Tbar_vals,
-  dTbar_vals = dTbar_vals,
-  sigma_vals = sigma_vals
-) %>% show_df()
-
-data.frame(
-  x_vals = x_vals,
-  Tbar_vals = Tbar_vals,
-  dTbar_vals = dTbar_vals,
-  sigma_vals = sigma_vals
-) %>% apply(2, normalize) %>% quickplot()
-```
 
 ## Milan comparison 
 i just moved from milan and was wondering about the distribution of climate here versus the one from milan
 
-```{r}
+```{r Milan comparison} 
 MILAN_RAW <- read.csv("Milan_DATA.csv", skip = 10)
 
 MIL_DATASET <- MILAN_RAW %>%
-  mutate(T_MAX = remove_outliers(T2M_MAX, fill = "NA") %>% na.approx) %>%
-  mutate(T_MIN = remove_outliers(T2M_MIN, fill = "NA") %>% na.approx) %>%
   mutate(
-    DAY = as.Date(MILAN_RAW$DOY - 1, origin = paste0(MILAN_RAW$YEAR, "-01-01"))
+    T_MAX = remove_outliers(T2M_MAX, fill = "NA") %>% na.approx(),
+    T_MIN = remove_outliers(T2M_MIN, fill = "NA") %>% na.approx(),
+    DAY   = as.Date(DOY - 1, origin = paste0(YEAR, "-01-01")),
+    Month = month(DAY),
+    T_AVG = (T_MAX + T_MIN) / 2
   ) %>%
-  mutate(Month = month(DAY)) %>%
-  dplyr::select(DAY, YEAR, Month, DOY, T_MAX, T_MIN)
+  select(DAY, YEAR, Month, DOY, T_MAX, T_MIN, T_AVG)
 
-
-MIL_DATASET$T_AVG <- apply(MIL_DATASET[c("T_MAX", "T_MIN")], 1, mean)
-
-MILAN_RAW[ifelse(find_outliers(MILAN_RAW$T2M_MAX) == 0, FALSE, TRUE), ] %>%
-  group_by(YEAR) %>%
-  summarise("Days" = length(DOY)) %>%
-  ggplot(aes(x = YEAR, y = Days)) +
-  geom_bar(stat = "identity") +
-  labs(
-    x = NULL,
-    y = NULL,
-    title = "Days where the sensor malfunctioned",
-    subtitle = "Identified by remove outliers"
-  )
-
+# Pivot just once for Milan (average only)
 MIL_pivot_df <- MIL_DATASET %>%
   select(DOY, YEAR, T_AVG) %>%
   pivot_wider(names_from = YEAR, values_from = T_AVG)
 
-
-MIL_MAX_pivot_df <- MIL_DATASET %>%
-  select(DOY, YEAR, T_MAX) %>%
-  pivot_wider(names_from = YEAR, values_from = T_MAX)
-
-MIL_MIN_pivot_df <- MIL_DATASET %>%
-  select(DOY, YEAR, T_MIN) %>%
-  pivot_wider(names_from = YEAR, values_from = T_MIN)
-
-ggplot(MIL_DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
-  geom_line() +
-  labs(
-    title = "All years overlapped",
-    x = "Day of the year",
-    y = "Index level of returns"
-  )
-
-
-MIL_THISYEAR <- data.frame(
-  c(MIL_DATASET[MIL_DATASET$YEAR == 2025, ]["T_MAX"]),
-  c(MIL_DATASET[MIL_DATASET$YEAR == 2025, ]["T_AVG"]),
-  c(MIL_DATASET[MIL_DATASET$YEAR == 2025, ]["T_MIN"])
+# Build comparison dataset (Milan + London summary stats)
+FD <- data.frame(
+  DOY      = MIL_pivot_df$DOY,
+  MIL_MIN  = apply(MIL_pivot_df[-1], 1, min, na.rm = TRUE),
+  MIL_MAX  = apply(MIL_pivot_df[-1], 1, max, na.rm = TRUE),
+  MIL_MEAN = apply(MIL_pivot_df[-1], 1, mean, na.rm = TRUE),
+  LON_MIN  = apply(pivot_df[-1], 1, min, na.rm = TRUE),
+  LON_MAX  = apply(pivot_df[-1], 1, max, na.rm = TRUE),
+  LON_MEAN = apply(pivot_df[-1], 1, mean, na.rm = TRUE)
 )
 
-FD <- data.frame(cbind(
-  MIL_pivot_df,
-  "MIL_MIN" = apply(MIL_pivot_df[-1], 1, min, na.rm = TRUE),
-  "MIL_MAX" = apply(MIL_pivot_df[-1], 1, max, na.rm = TRUE),
-  "MIL_MEAN" = apply(MIL_pivot_df[-1], 1, mean, na.rm = TRUE),
-  pivot_df[-1],
-  "LON_MIN" = apply(pivot_df[-1], 1, min, na.rm = TRUE),
-  "LON_MAX" = apply(pivot_df[-1], 1, max, na.rm = TRUE),
-  "LON_MEAN" = apply(pivot_df[-1], 1, mean, na.rm = TRUE)
-))
-
-FD %>%
-  ggplot(aes(x = DOY)) +
+# Plot comparison
+ggplot(FD, aes(x = DOY)) +
   geom_ribbon(aes(ymin = MIL_MIN, ymax = MIL_MAX, fill = "Milan"), alpha = 0.2) +
   geom_ribbon(aes(ymin = LON_MIN, ymax = LON_MAX, fill = "London"), alpha = 0.2) +
-  geom_line(aes(y = MIL_MEAN, color = "MILAN AVG"), linewidth = 1) +
-  geom_line(aes(y = LON_MEAN, color = "LONDON AVG"), linewidth = 1) +
-  # geom_line(aes(y = MIL_pivot_df$`2025`, color = "AVG_Current_MIL"), linewidth = 0.8) +
-  # geom_line(aes(y = pivot_df$`2025`, color = "AVG_Current_LON"), linewidth = 0.8) +
-  scale_color_manual(name = NULL,
-    values = c(
-      "MILAN AVG" = "darkblue",
-      "LONDON AVG" = "orange2",
-      "AVG_Current_MIL" = "darkblue",
-      "AVG_Current_LON" = "orange2"
-    )
+  geom_line(aes(y = MIL_MEAN, color = "Milan Avg"), linewidth = 1) +
+  geom_line(aes(y = LON_MEAN, color = "London Avg"), linewidth = 1) +
+  scale_color_manual(name = NULL, values = c("Milan Avg" = "darkblue", "London Avg" = "orange2")) +
+  scale_fill_manual(name = NULL, values = c(Milan = "lightskyblue", London = "darkorange2")) +
+  labs(
+    title = "Temperature comparison Milan vs London",
+    y = "Degrees Celsius",
+    x = "Day of the year",
+    caption = "NASA POWER - Data Access Viewer (DAV) 1982–2025"
   ) +
-  scale_fill_manual(
-    name = NULL,
-    values = c(Milan = "lightskyblue", London = "darkorange2")
-  ) +
-  labs(title = "Temperature comparison Milan vs London", y = "Degrees celsius", x = "Day of the year", caption = "NASA POWER - Data Access Viewer (DAV) 1982-2025") +
   theme(legend.position = "bottom") +
   guides(color = "none")
+
 
 minn <- min(FD$LON_MIN, FD$MIL_MIN)
 maxx <- max(FD$LON_MAX, FD$MIL_MAX)
@@ -1871,12 +1963,13 @@ grid.arrange(
 )
 ```
 
-
 ```{r beep}
 #| include: False
 beepr::beep(sound = 4)
 rsconnect::writeManifest()
 ```
+
+
 
 
 

@@ -1,7 +1,7 @@
 #* AUTO-GENERATED STANDALONE R SCRIPT ----
 #* Generated from R Markdown file using extract_r_code()
 #* Source file: quarto_climate_derivatives.qmd
-#* Generated on: 2025-09-22 18:30:39.96323
+#* Generated on: 2025-09-23 12:09:50.592293
 
 #* REQUIRED PACKAGES ----
 #? If you don't have these packages, run: install.packages(c("caret", "dplyr", "fBasics", "ggplot2", "knitr", "MASS", "NMOF", "quantmod", "splines", "tidyr", "timeSeries", "zoo", "changepoint", "DT", "forecast", "gt", "leaflet", "nlme", "PerformanceAnalytics", "reshape2", "stats4", "tidyverse", "TTR", "", "colorspace", "e1071", "gganimate", "gtExtras", "lubridate", "nlstools", "plotly", "rugarch", "tibble", "timeDate", "xts", ""))
