@@ -7,18 +7,17 @@ This repository contains a comprehensive analysis of temperature-based weather d
 Weather derivatives are financial instruments that help businesses hedge against climate-related risks, such as unusually hot summers or cold winters. This project focuses on **Heating Degree Day (HDD)** and **Cooling Degree Day (CDD)** options, using historical temperature data to simulate future scenarios and estimate derivative prices.
 
 The main objectives are to:  
-- Explore and visualize historical temperature data (NASA POWER dataset) to identify seasonal patterns and long-term trends.  
+- Explore and visualize historical temperature data (NASA POWER | Data Access Viewer (DAV)) to identify seasonal patterns and long-term trends.  
 - Model temperature dynamics using mean-reverting stochastic processes, incorporating both deterministic and stochastic components.  
-- Simulate future temperature paths via **Monte Carlo methods**.  
+- Simulate future temperature paths via Monte Carlo methods.  
 - Price temperature options and estimate sensitivities (Greeks) for practical risk management insights.  
 - Provide an interactive, visually rich report to communicate findings to both technical and non-technical audiences.  
 
 ## Project Structure
 
-- `quarto_weather_analysis.qmd` – Main Quarto notebook generating the HTML report with full workflow, charts, and results.  
+- `quarto_climate_derivatives.qmd` – Main Quarto notebook generating the HTML report with full workflow, charts, and results.  
 - `weather_derivatives.R` – Standalone R script for running the key analyses and simulations without Quarto.  
-- `README.md` – This overview and instructions for usage.  
-- `figures/` – Folder containing generated charts and visualizations from the analysis.  
+- `quarto_climate_derivatives.html` – Results from the Main Quarto notebook and key file for people interested, useful for a quick glance at what this report is about.  
 
 ## Key Features
 
