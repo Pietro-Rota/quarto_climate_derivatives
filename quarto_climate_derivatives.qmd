@@ -79,16 +79,16 @@ layout <- plotly::layout
 <summary>Full dependencies list, click to expand list</summary>
 
 ```{r session_info, echo=FALSE}
-dff <- sessionInfo()
-dff$R.version$version.string
-dff$platform
-rm(dff)
+session_info <- sessionInfo()
+session_info$R.version$version.string
+session_info$platform
+rm(session_info)
 ```
 
 Functions loaded from main
 
 ```{r functions_loaded, echo=FALSE}
-file <- "C:\\Users\\pietr\\OneDrive\\Desktop\\angolo in alto a destra\\quarto_climate_derivatives\\quarto_climate_derivatives.qmd"
+file <- "C:\\Users\\pietr\\OneDrive\\Desktop\\angolo in alto a destra\\quarto_climate_derivatives - Copia\\quarto_climate_derivatives.qmd"
 when_rendering(functions_loaded(file))
 ```
 
@@ -102,6 +102,7 @@ Functions defined in this document
 
 ```{r required_functions, echo=FALSE}
 when_rendering(required_functions(file))
+when_rendering(dump_functions(file))
 ```
 
 ```{r github file, echo=FALSE}
@@ -129,7 +130,7 @@ print(Sys.time(), "\n")
 
 3.  MANAGING CLIMATE RISK IN THE U.S. FINANCIAL SYSTEM, ISBN: 978-0-578-74841-2 (2020) \[[LINK](https://www.cftc.gov/sites/default/files/2020-09/9-9-20%20Report%20of%20the%20Subcommittee%20on%20Climate-Related%20Market%20Risk%20-%20Managing%20Climate%20Risk%20in%20the%20U.S.%20Financial%20System%20for%20posting.pdf)\]
 
-\# Climate data download
+# Climate data download
 
 Much of the weather market is dominated by temperature derivatives, aimed to protect the holder from unexpected temperature prints. The underlying used to trade these contracts is either Heating Degree Days (HDD) or Cooling Degree Days (CDD). For a specific day n, these can be defined as:
 
@@ -207,14 +208,19 @@ DATASET <- ORIGINAL_DATASET %>%
   
 
 DATASET$T_AVG <- apply(DATASET[c("T_MAX", "T_MIN")], 1, mean)
+sens_misfunctions <- sum(ifelse(find_outliers(ORIGINAL_DATASET$T2M_MAX)==0,FALSE,TRUE))
 
-ORIGINAL_DATASET[ifelse(find_outliers(ORIGINAL_DATASET$T2M_MAX)==0,FALSE,TRUE),] %>% 
+if (sens_misfunctions == 0) {
+  print("No days where the sensors misfunctioned")
+} else{
+  ORIGINAL_DATASET[ifelse(find_outliers(ORIGINAL_DATASET$T2M_MAX)==0,FALSE,TRUE),] %>% 
   group_by(YEAR) %>% 
   summarise("Days" = length(DOY)) %>% 
   ggplot( aes(x = YEAR, y = Days))+
     geom_bar(stat = "identity") + 
     labs(x= NULL, y =NULL, title = "Days where the sensor malfunctioned", 
         subtitle = "Identified by remove outliers")
+}
 
 if (knitr::is_html_output()) {
 DATASET %>% select(DAY, T_MAX, T_MIN, T_AVG) %>% 
@@ -230,7 +236,7 @@ DATASET %>% select(DAY, T_MAX, T_MIN, T_AVG) %>%
 }
 ```
 
-## Initial data visualization
+# Initial data visualization
 
 ```{r Initial Viz}
 cleandataset <- DATASET %>% 
@@ -270,7 +276,6 @@ tail(cleandataset, lookback) %>%
   scale_color_manual(name = "Temps", 
                     values = c(T_MAX = "indianred3",T_MIN = "lightblue",T_AVG = "lightgreen"))
 ```
-
 
 ```{r gganimate, eval = params$gganimate}
 library(gganimate)
@@ -367,7 +372,7 @@ t_data %>%
 
 ```
 
-## Sidequest: overlap of the dataset
+## Overlap of the dataset
 
 One of the points that i would need for later is the standard deviation across the days of year, a pivot table is used for this step as with this I'm able to line up all the dataset month to month, by doing this im also able to analize seasonal patterns and look at the seasonality at a glance
 
@@ -396,7 +401,7 @@ DATASET %>%
 
 ### How is this year compared to the rest
 
-this dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
+This dataset is 43 years long and there have been some really hot points and some really cold points over the years, so i wanted to look at my dataset and create a ribbon of all the max and mins, to see if this year has been so hot when looking at the averages, while this is in no way conclusive evidence it at least gives you a glimpse at how the climate is changing especially when looking at the middle of the year.
 
 ```{r avg hottness}
 ggplot(DATASET, aes(x = DOY, y = T_AVG, group = YEAR, color = YEAR)) +
@@ -426,8 +431,6 @@ cbind(pivot_df,
   labs(title = "Is this year hotter on average?", y = NULL, x = NULL)+
   theme(legend.position = "bottom")
 ```
-
-
 
 ## Seasonal analysis
 
@@ -520,27 +523,26 @@ DATASET_seas %>%
 
 ## Long term trends
 
-```{r LT-trends}
+```{r }
+#| warning: false
 quickplot(SMA(DATASET$T_AVG, lookback), show_legend = F, title = "Long term Rolling average",
-  x_start = min(DATASET$YEAR),x_step = 1 / 365.25
-)
+  x_start = min(DATASET$YEAR),x_step = 1 / 365.25)
 
 quickplot(
   runSD(DATASET$T_AVG, lookback), show_legend = F, title = "Long term Standard deviation",
-  x_start = min(DATASET$YEAR), x_step = 1 / 365.25
-)
+  x_start = min(DATASET$YEAR), x_step = 1 / 365.25)
 ```
 
 # Seasonal decomposition
 
-The first step in pricing temperature options is to decompose the time series into distinct components that each represent different underlying patterns. This process is essential for understanding the structure of the data and for developing predictive models. In basic temrs it can be expressed as the sum of three main components:$y_t=T_t+S_t+e_t$, Here, $T_t$ is the trend component that captures the long-term movement, $S_t$ represents the seasonal variations (periodic patterns), and $e_t$ refers to the residuals or noise in the data.
+The first step in pricing temperature options is to decompose the time series into distinct components that each represent different underlying patterns. This process is essential for understanding the structure of the data and for developing predictive models. In basic terms it can be expressed as the sum of three main components:$y_t=T_t+S_t+e_t$, Here, $T_t$ is the trend component that captures the long-term movement, $S_t$ represents the seasonal variations (periodic patterns), and $e_t$ refers to the residuals or noise in the data.
 
 which in our case becomes 
 $$
 \overline{T_t} = T_{trend} + T_{seasonal}+ Residuals
 $$
 
-The approach was to develop each component indipendently
+The approach was to develop each component independently
 
 $$
 T_{trend} = a + b\cdot t
@@ -570,7 +572,7 @@ $$
 
 Recent research has suggested that partial Fourier decomposition can be effective in modeling temperature data, particularly by omitting the cosine component. This approach simplifies the seasonal model while still accurately representing the cyclical nature of temperature changes. The sinusoidal term is often sufficient to describe seasonal temperature variations, making the model both interpretable and computationally efficient.
 
-Before this I used a denoising procedure using Gaussian Convolution Filter as it also enhances the effectiveness of the Fourier transformation by reducing noise, allowing you to identify the dominant frequencies or cycles in your temperature data more accurately.
+Before this I used a de-noising procedure using Gaussian Convolution Filter as it also enhances the effectiveness of the Fourier transformation by reducing noise, allowing you to identify the dominant frequencies or cycles in your temperature data more accurately.
 
 -   **Gaussian Convolution Filter**:
 
@@ -588,7 +590,7 @@ $$
 
 -   **Symmetric Filtering**: using 2 sides makes this operation symmetric, applying the kernel both forward and backward across the data, ensuring the filtering effect is centered.
 
--   **Conclusion and data inspection**: in visual terms the denoised data should look smoother with slightly lower peaks
+-   **Conclusion and data inspection**: in visual terms the de-noised data should look smoother with slightly lower peaks
 
 ```{r SEAS DEC + FOURIER}
 temps <- DATASET
@@ -873,6 +875,7 @@ temps_OU %>%
 ```
 
 # Modeling volatility
+
 Now that i have the deterministic part of the model complete I need to model the volatility the first step was looking if there is any relation between day-of-year and volatility across the days of the year to try and model.
 
 ```{r vol modeling, fig.width= 9}
@@ -901,21 +904,18 @@ quickplot(vol_df$std, type = geom_point, show_legend = F, xlab = "Day of the yea
 
 The volatilty definitely has a shape and so we can try and model it with a deterministic model. There are many models to try and use, I'm trying a bunch to be thorough:
 
-* Polynomial regression 
-* Fourier transformation
-* B-splines
-* Kernel smoothing
-* Loess modeling 
-* Generalized additive modelling
+-   Polynomial regression
+-   Fourier transformation
+-   B-splines
+-   Kernel smoothing
+-   Loess modeling
+-   Generalized additive modelling
 
-A good way is to look at both fit and complexity-adjusted metrics:
-  - Akaike Information Criterion (AIC): Helps select the best model by balancing goodness-of-fit and complexity by including the number of parameters alongside the log-likelihood in its calculation.
-  - The residual sum of squares (RSS) measures the level of variance in the error term, or residuals, of a regression model. The smaller the residual sum of squares, the better your model fits your data; the greater the residual sum of squares, the poorer your model fits your data.
-  - Visual inspection: sometimes a model with slightly worse AIC is much smoother/interpretable.
+A good way is to look at both fit and complexity-adjusted metrics: - Akaike Information Criterion (AIC): Helps select the best model by balancing goodness-of-fit and complexity by including the number of parameters alongside the log-likelihood in its calculation. - The residual sum of squares (RSS) measures the level of variance in the error term, or residuals, of a regression model. The smaller the residual sum of squares, the better your model fits your data; the greater the residual sum of squares, the poorer your model fits your data. - Visual inspection: sometimes a model with slightly worse AIC is much smoother/interpretable.
 
 ## Polynomial Regression:
-Polynomial regression is an extension of linear regression where the relationship between the independent variable(s) and the dependent variable is modeled as an $n-th$ degree polynomial. Polynomial regression allows for curvature by adding higher-order terms:
-$$y = \beta_0 + \beta_1 x + \beta_2 x^2 + \cdots + \beta_d x^d + \epsilon$$
+
+Polynomial regression is an extension of linear regression where the relationship between the independent variable(s) and the dependent variable is modeled as an $n-th$ degree polynomial. Polynomial regression allows for curvature by adding higher-order terms: $$y = \beta_0 + \beta_1 x + \beta_2 x^2 + \cdots + \beta_d x^d + \epsilon$$
 
 where $d$ is the degree of the polynomial.
 
@@ -969,12 +969,11 @@ poly_metrics_df <- data.frame(
 
 ## Fourier transforms
 
-The Fourier transform is a mathematical technique that breaks down any signal (like your volatility over days) into a sum of sinusoids (sines and cosines) at different frequencies.
-$$f(x) \approx a_0 + \sum_{k=1}^n \big( a_k \cos(2\pi kx/T) + b_k \sin(2\pi kx/T) \big)$$
+The Fourier transform is a mathematical technique that breaks down any signal (like your volatility over days) into a sum of sinusoids (sines and cosines) at different frequencies. $$f(x) \approx a_0 + \sum_{k=1}^n \big( a_k \cos(2\pi kx/T) + b_k \sin(2\pi kx/T) \big)$$
 
 This is especially powerful for seasonal or periodic data like temperature volatility, because cycles are naturally captured by sines and cosinesThis is especially powerful for seasonal or periodic data like temperature volatility, because cycles are naturally captured by sines and cosines
 
-for this application im not changing the Amplitude (Strength of each frequency component), or Phase (Timing offset of each component) opting to just increase the order 
+for this application I'm not changing the Amplitude (Strength of each frequency component), or Phase (Timing offset of each component) opting to just increase the order
 
 ```{r fourier int}
 fourier_series <- function(x, n_terms, period = 365.25) {
@@ -1044,11 +1043,9 @@ fourier_metrics_df <- data.frame(
     set_rownames(paste0("Fourier",1:9))
 ```
 
-
 ## B-splines
-B-splines create smooth curves by joining together piecewise polynomials at specific points called "knots." Think of it as drawing a smooth curve through control points, in this case Equally spaced knots, where each piece is a simple polynomial. 
-It is a model with excellent numerical stability (very hard to create overfittting)
 
+B-splines create smooth curves by joining together piecewise polynomials at specific points called "knots." Think of it as drawing a smooth curve through control points, in this case Equally spaced knots, where each piece is a simple polynomial. It is a model with excellent numerical stability (very hard to create overfittting)
 
 ```{r B-splines, fig.width= 9}
 library(splines)
@@ -1064,7 +1061,7 @@ create_spline_plot <- function(knots, x, y) {
     geom_point(aes(x, y), color = 'cornflowerblue', size = 1.5) +
     geom_line(aes(x, yfit), color = 'black', linewidth = 1) +
     ggtitle(paste("Knots #", knots, "\nRSS:", round(rss, 2), "AIC:", round(aic,2))) +
-    labs(x = NULL, y = NULL)
+    labs(x = NULL, y = NULL) +
     theme_classic()
 
   # Return both plot and metrics
@@ -1091,19 +1088,17 @@ spline_metrics_df <- data.frame(
     set_rownames(paste0("B-Spline",1:9))
 ```
 
+## Kernel smoothing
 
-## Kernel smoothing 
 Kernel regression creates smooth predictions by taking weighted averages of nearby data points. Points closer to the prediction location get higher weights, creating a locally-adapted smooth curve, also known as the Nadaraya-Watson estimator.
 
 $$\hat y(x) = \sum_i^n w_i(x) * y_i$$
 
-where $w(x)$ is the weights function in this case im using a gaussian kernel $K(u)=exp\left(−\frac12​u^2\right)$
+where $w(x)$ is the weights function in this case I'm using a gaussian kernel $K(u)=exp\left(−\frac12​u^2\right)$
 
-the bandwidth (h) is the control term
-Small h: More wiggly, follows data closely (high variance, low bias)
-Large h: Smoother, averages over more points (low variance, high bias)
+the bandwidth (h) is the control term Small h: More wiggly, follows data closely (high variance, low bias) Large h: Smoother, averages over more points (low variance, high bias)
 
-```{r kernel smooth} 
+```{r kernel smooth, fig.width = 9}
 kernel_smooth <- function(x_eval, x_data, y_data, h_val=10) {
     weights <- exp(-0.5 * ((x_eval - x_data) / h_val)^2)
     weights <- weights / sum(weights)
@@ -1147,13 +1142,12 @@ kernel_metrics_df <- data.frame(
     set_rownames(paste0("Kernel-smoothing",1:9))
 ```
 
+## Loess modelling
 
-## Loess modelling 
-LOESS fits a smooth curve by performing many small linear or quadratic regressions on local neighborhoods of data points. At each point, it gives more weight to nearby observations and less to distant ones.
-For each point x₀, define a neighborhood containing the α fraction of closest points (span parameter) 
+LOESS fits a smooth curve by performing many small linear or quadratic regressions on local neighborhoods of data points. At each point, it gives more weight to nearby observations and less to distant ones. For each point x₀, define a neighborhood containing the $α$ fraction of closest points (span parameter)
 
-- Small span: More wiggly, follows data closely
-- Large span: Smoother, more global averaging
+-   Small span: More wiggly, follows data closely
+-   Large span: Smoother, more global averaging
 
 ```{r loess, fig.width= 9}
 create_loess_plot <- function(span_val, x, y) {
@@ -1206,9 +1200,7 @@ loess_metrics_df <- data.frame(
 
 ## GAM
 
-GAM models fit smooth, flexible curves to data by combining multiple smooth functions instead of assuming a specific parametric form. Think of it as "flexible regression" that can capture complex patterns without forcing them into straight lines or simple curves.
-A basis functions is needed to control the curvature, I'm using as the basis functions cyclic cubic regression splines `bs = "cc"`, a penalized cubic regression splines up to second derivative.
-$$ y = β_0 + f_1(x_1) + f_2(x_2) + ε$$
+GAM models fit smooth, flexible curves to data by combining multiple smooth functions instead of assuming a specific parametric form. Think of it as "flexible regression" that can capture complex patterns without forcing them into straight lines or simple curves. A basis functions is needed to control the curvature, I'm using as the basis functions cyclic cubic regression splines `bs = "cc"`, a penalized cubic regression splines up to second derivative. $$ y = β_0 + f_1(x_1) + f_2(x_2) + ε$$
 
 ```{r GAM, fig.width= 9}
 library(mgcv, warn.conflicts = F, quietly = T)
@@ -1231,12 +1223,12 @@ create_gam_plot <- function(x, y, k_value) {
     ggtitle(paste("K:", k_value, "\nRSS:", round(rss, 2), 
                   "AIC:", round(aic, 2))) +
     theme_classic() +
-    labs(y = "Temperature", x = "Day of Year")
+    labs(y = NULL, x = NULL)
   
   return(list(plot = plot, k_value = k_value, rss = rss, aic = aic))
 }
 
-k_values <- floor(seq(1, 20, length.out = 9))
+k_values <- floor(seq(4, 20, length.out = 9))
 results <- lapply(k_values, create_gam_plot, x = x, y = y)
 
 # Extract plots
@@ -1255,8 +1247,9 @@ gam_metrics_df <- data.frame(
     set_rownames(paste0("GAM",1:9))
 ```
 
-## Figuring out which is the best model 
-Now for the task of comparing the models as i 
+## Figuring out which is the best model
+
+Now for the task of comparing the models as i
 
 ```{r best model}
 #| layout-ncol: 2
@@ -1336,8 +1329,7 @@ parameter <- switch(best_model_name,
 )
 ```
 
-so the best model is `{r} best_model_name` with `{r} parameter` = `{r} best_model$Parameter`. it has the lowest AIC at `{r} round(best_model$AIC,2)` value and the best RSS at `{r} round(best_model$RSS,2)`. so moving forward I will use that for the volatility modeling. 
-
+so the best model is `{r} best_model_name` with `{r} parameter` = `{r} best_model$Parameter`. it has the lowest AIC at `{r} round(best_model$AIC,2)` value and the best RSS at `{r} round(best_model$RSS,2)`. so moving forward I will use that for the volatility modeling.
 
 ```{r AR on vol_DOY}
 # 3. Print long-term volatility metrics
@@ -1353,13 +1345,14 @@ cat("Rate of mean reversion of volatility process is:", round(coef["ar1"], 3), "
 summary(ar_model)
 ```
 
-
 # Montecarlo simulations
+
 With the volatility component now modelled and a satisfactory result pulled from it it's time to move to the actual Montecarlo simulations for the temperature come the maturity date next year
 
-so starting from our model both the deterministic component as well as the volatilty component need to be simulated and added to create the full simulated dataset from all our previous work 
+so starting from our model both the deterministic component as well as the volatilty component need to be simulated and added to create the full simulated dataset from all our previous work
 
-using the Euler scheme approximation step in our modified Ornstein-Uhlenbeck model for temperature simulations
+using the Euler scheme approximation step in our modified Ornstein-Uhlenbeck model for temperature simulations 
+
 $$
 dT_t=\left(\frac{dT_{bar}(t)}{dt}+κ(T_{bar}(t)−T_t)\right)dt + σ(t)\ dW_t
 $$
@@ -1398,9 +1391,9 @@ temps$model_fit <- T_model(
 )
 ```
 
-At this point we care more about the distribution than any single point not if there is auto-correlation in the residuals 
+At this point we care more about the distribution than any single point not if there is auto-correlation in the residuals
 
-```{r}
+```{r final volatility}
 # Big switch function to get the correct model VALUES
 fit_volatility <- switch(
   best_model_name,
@@ -1457,8 +1450,9 @@ ggplot(vol_df, aes(x = day)) +
   theme(legend.position = "bottom")
 ```
 
-Finally we can implement the functions for the simulation 
-```{r}
+Finally we can implement the functions for the simulation
+
+```{r functions}
 #| code-fold: false
 # REAL Monte Carlo Simulation Functions
 euler_step <- function(row, kappa, M) {
@@ -1470,7 +1464,7 @@ euler_step <- function(row, kappa, M) {
 }
 
 monte_carlo_temp <- function(trading_dates, Tbar_params, vol_df, 
-                            first_ordinal, M = 1, kappa = ) {
+                            first_ordinal, M = 1, kappa = 0.226139) {
   # Convert dates to numeric if needed
   trading_numeric <- as.numeric(trading_dates)
   kappa_val <- as.double(kappa)
@@ -1524,7 +1518,7 @@ monte_carlo_temp <- function(trading_dates, Tbar_params, vol_df,
 
 I then decided to check performance in a couple of ways, first just a one year completed model to see how the performance fairs against both the stricter 5-95 percentile and also a fair but more generous $±2σ$ from the simulated volatility.
 
-```{r}
+```{r 1sim}
 # Run Simulation
 one_year_trading_dates <- seq(as.Date("2024-12-31"), as.Date("2025-12-31"), by = "day")
 sim_results <- monte_carlo_temp(
@@ -1542,34 +1536,59 @@ MIN_MAX <- data.frame(
       "MAX" = apply_convolution(apply(pivot_df[-1], 1, quantile, 0.95, na.rm = TRUE),dnorm(-3:3))
     )
 
-ggplot() +
+suppressWarnings(
+  ggplot() +
   geom_ribbon(data = MIN_MAX, aes(x = one_year_trading_dates, ymin = MIN, ymax = MAX), , alpha = 0.2) +
   geom_ribbon(data = MIN_MAX, aes(x = one_year_trading_dates, ymin = MIN-2*vol_df$fvol, ymax = MAX+2*vol_df$fvol), alpha = 0, color = "red") +
   geom_point(data = piv_sim, aes(x = Date, y = Temperature, color = Simulation), alpha = 0.7) +
 labs(title = "Monte Carlo Temperature Simulations", y = "Temperature (°C)", x = "Day of the year") +
   guides(fill = "none") + 
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom"))
 ```
 
 They are scattered across the historical envelope, which suggests:
-*  The simulations are plausible given past variability.
-*  There’s no extreme bias (e.g., all simulations too hot or too cold).
-*  The model accounts for natural variability and uncertainty.
-*  The simulated values mostly stay within the historical bounds (plausible since we are taking the effects of climate change variations)
-*  A slight seasonal shift with spring and summer starting a bit later than historically
 
-Finally we can check the distribution of the future datapoints and check it against the historical perfomance, we can see that the distribution takes on a different shape from the historical models there appears to be a reasonably good fit for your temperature forecast model:
+-   The simulations are plausible given past variability.
+-   There’s no extreme bias (e.g., all simulations too hot or too cold).
+-   The model accounts for natural variability and uncertainty.
+-   The simulated values mostly stay within the historical bounds (plausible since we are taking the effects of climate change variations)
+-   A slight seasonal shift with spring and summer starting a bit later than historically
 
-- The general shape and spread of both distributions are well captured
-- The seasonal separation is clearly maintained
-- The peak positions are close to the historical data
-- The overall temperature ranges match well
+Finally we can check the distribution of the future datapoints and check it against the historical performance, we can see that the distribution takes on a different shape from the historical models there appears to be a reasonably good fit for your temperature forecast model:
+
+-   The general shape and spread of both distributions are well captured
+-   The seasonal separation is clearly maintained
+-   The peak positions are close to the historical data
+-   The overall temperature ranges match well
 
 Areas where the fit could be improved:
 
-Your simulated winter distribution appears slightly more peaked/narrow than the historical winter data, suggesting the model may be underestimating temperature variability in winter
-The simulated summer distribution looks quite close to historical, which is good
-The tails of the distributions seem reasonably well represented
+Your simulated winter distribution appears slightly more peaked/narrow than the historical winter data, suggesting the model may be underestimating temperature variability in winter The simulated summer distribution looks quite close to historical, which is good The tails of the distributions seem reasonably well represented
+
+This is what goes on behind the scenes split into different components
+
+```{r plot of model components}
+trading_dates_year <- seq(as.Date("2024-12-31"), as.Date("2025-12-31"), by = "day")
+
+x_vals <- as.numeric(trading_dates_year) - as.numeric(trading_dates_year)[1]
+Tbar_vals <- T_model(x_vals, a, b, alpha, theta)
+dTbar_vals <- dT_model(x_vals, a, b, alpha, theta)
+sigma_vals <- data.frame(vol_df)$fvol[yday(trading_dates_year)]
+
+data.frame(
+  x_vals = x_vals,
+  Tbar_vals = Tbar_vals,
+  dTbar_vals = dTbar_vals,
+  sigma_vals = sigma_vals
+) %>%
+  show_df()
+
+grid.arrange(top = "Components of the Montecarlo simulation divided", ncol = 1,
+  quickplot(Tbar_vals, subtitle = "Deterministic Tbar", show_legend = F, linewidth = 1, show_x = F, xlab = NULL, ylab = NULL),
+  quickplot(dTbar_vals, subtitle = "Deterministic Tbar shift", show_legend = F, linewidth = 1, show_x = F, xlab = NULL, ylab = NULL),
+  quickplot(sigma_vals, subtitle = "Volatility model", show_legend = F, linewidth = 1, show_x = F, xlab = NULL, ylab = NULL),
+  quickplot(monte_carlo_temp(trading_dates_year, Tbar_params, vol_df, first_ordinal_val, M = 2)$mc_sims[2], subtitle = "Montecarlo result of 1 simulaiton", show_legend = F, linewidth = 1, show_x = F, xlab = F, ylab = NULL))
+```
 
 ```{r MNC sym}
 # Set number of simulations
@@ -1627,58 +1646,76 @@ ggplot(plot_data, aes(x = Temperature, fill = Season)) +
 
 
 grid.arrange( top = "Cumulative Density: Simulated vs Observed", nrow = 1,
-compare_cdf(unlist(mc_sims_summer), summer_dataset$T_AVG, "Summer dataset", "darkorange"),
-compare_cdf(unlist(mc_sims_winter), winter_dataset$T_AVG, "Winter dataset", "steelblue"))
+suppressWarnings(compare_cdf(unlist(mc_sims_summer), summer_dataset$T_AVG, "Summer dataset", "darkorange")),
+suppressWarnings(compare_cdf(unlist(mc_sims_winter), winter_dataset$T_AVG, "Winter dataset", "steelblue")))
 ```
 
 # Risk neutral pricing
 
-London's weather is rather chilly, so, we need to actually structure a contract that makes sense, generally the 18 degrees used is way too low for summers in a climate like florida as the lowest point simulated is `{r} round(min(as.numeric(sim_results_summer$mc_sims[-1])),2)`
+London's weather is rather chilly, so, we need to actually structure a contract that makes sense
 
-So we need to cmpute the probability that the option does not pay out (i.e., temperature Tn stays above 18°C).
+So we need to compute the probability that the option does not pay out (i.e., temperature Tn stays above 18°C).
 
-The probability is calculated as by counting how many simulated paths had $Tn$ ≥ 18°C where no payout would occur.
+The smooth probability decay from 99.995% at 6°C to just 0.142% at 28°C indicates your model properly captures the tail behavior of summer heat, with meaningful probabilities of extreme warm weather that would trigger cooling degree day payouts.
 
 ```{r coldest summer}
-prob_sim_summer <- as.numeric(sim_results_summer$mc_sims[-1])
+temps_checked <- 5:28
+prob_no_payout_df <- data.frame(matrix(numeric(length(temps_checked)*3), ncol = 3)) %>% 
+  set_colnames(c("temps", "summer", "winter"))
+prob_no_payout_df[, 1] <- temps_checked
 
-for (n in 5:35) {
+prob_sim_summer <- as.numeric(sim_results_summer$mc_sims[-1])
+counter <- 1
+for (n in temps_checked) {
   payoffs <- ifelse(prob_sim_summer >= n, 0, n - prob_sim_summer)
   prob_no_payout <- mean(payoffs == 0) * 100
-  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
+  prob_no_payout_df[counter,2] <- prob_no_payout
+  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%","\n"))
+  counter <- counter+1
 }
 ```
 
-Conversely in the winter has a much flatter distribution so its harder to figure out a good balance 
+
+The winter distribution presents a stark contrast, demonstrating the model's ability to differentiate seasonal risk profiles effectively. Winter temperatures show virtually no probability of staying above most thresholds until the temperature reach the 20-25°C range, reflecting the reality that winter weather derivatives would almost certainly pay out for heating degree days. The extremely low probabilities of no payout (0% for most reasonable thresholds) until temperatures exceed 20°C confirms the model captures the fundamental asymmetry between seasonal risks. This distribution pattern suggests the temperature simulation successfully models the heavy lower tail of winter temperatures while maintaining realistic upper bounds, creating the foundation for properly pricing temperature derivatives that protect against seasonal weather extremes.
 
 ```{r hottest winter}
 prob_sim_winter <- as.numeric(sim_results_winter$mc_sims[-1])
 
-for (n in 5:35) {
-  payoffs <- ifelse(prob_sim_winter <= n, 0, n - prob_sim_winter)
+counter <- 1
+for (n in temps_checked) {
+    payoffs <- ifelse(prob_sim_winter <= n, 0, n - prob_sim_winter)
   prob_no_payout <- mean(payoffs == 0) * 100
-  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%"),"\n")
+  cat(paste0("Probability P(max(",n,"-Tn, 0) = 0): ", prob_no_payout, "%","\n"))
+  prob_no_payout_df[counter,3] <- prob_no_payout
+  counter <- counter+1
 }
+
+ggplot(prob_no_payout_df, aes(x = temps))+
+  geom_line(aes(y = summer, color = "Summer"))+
+  geom_line(aes(y = winter, color = "Winter"))
 ```
 
-## Market model 
+## Market model
+
 The market for weather derivatives is a typical example of an incomplete market, because the underlying variable, the temperature, is not tradable. Therefore we have to consider the market price of risk $\lambda$, in order to obtain unique prices for such contracts.
 
 Since there is not yet a real market from which we can obtain prices, we assume for simplicity that the market price of risk is constant. Furthermore, we assume that we are given a risk free asset with constant interest rate $r$ and a contract that for each degree Celsius pays one unit of currency. Thus, under a martingale measure $\mathbb{Q}$, characterized by the market price of risk $\lambda$, our price process also denoted by $T_t$ satisfies the following dynamics:
 
 So under risk neutral probability it becomes 
+
 $$
 dT_t^\mathbb{Q}=\left(\frac{d\bar T_t}{dt}+κ(\bar T_t−T_t)-\lambda\sigma _t \right)dt + σ_t\ dW^Q_t
 $$
 
-Compared to the physical probability measue
+Compared to the physical probability measure 
+
 $$
 dT_t^\mathbb{P}=\left(\frac{d\bar T_t}{dt}+κ(\bar T_t−T_t) \right)dt + σ_t\ dW^P_t
 $$
 
 Only losing the $-\lambda\sigma _t$ term
 
-For simplicity's sake i'm just doing montecarlo valuation as some other researchers did not find much difference with analytical valuation of the Black and Scholes closed form stochastic calculus method
+For simplicity's sake i'm just doing Montecarlo valuation as some other researchers did not find much difference with analytical valuation of the Black and Scholes closed form stochastic calculus method
 
 ```{r final model}
 temperature_option <- function(trading_dates, no_sims, Tbar_params, vol_df, 
@@ -1718,13 +1755,13 @@ r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal = first_ordinal_v
 
 trading_dates <- seq(as.Date("2024-12-01"), as.Date("2025-03-01"), by = "day")
 
-temperature_option(trading_dates, 10000, Tbar_params, vol_df, r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal, option_type = "put", ref_temperature = 18)
+temperature_option(trading_dates, 10000, Tbar_params, vol_df, r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal, option_type = "put", ref_temperature = 18) %>% bprint()
 
-temperature_option(trading_dates, 10000, Tbar_params, vol_df, r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal, option_type = "call", ref_temperature = 18)
+temperature_option(trading_dates, 10000, Tbar_params, vol_df, r = 0.05, alpha = 2500, K = 300, T_maturity = 1, first_ordinal, option_type = "call", ref_temperature = 18) %>% bprint()
 ```
 
 ```{r loop to get graph}
-(max(as.numeric(trading_dates))-min(as.numeric(trading_dates)))/365.25
+cat("maturity =", (max(as.numeric(trading_dates))-min(as.numeric(trading_dates)))/365.25, "years")
 strikes <- seq(450,650, length.out = 20)
 ref_t <- 10
 nsim <- 10000
@@ -1799,7 +1836,8 @@ cat("Volatility range:", range(daily_vol), "\n")
 ```
 
 ## Greek Numerical Approximations
-Since we aren't dealing with plain vanilla options the olny option to calculate greks is to do them via Numerical Approximations using:
+
+Since we aren't dealing with plain vanilla options the only option to calculate geeks is to do them via Numerical Approximations using:
 
 $$
 \text{Greek} \approx \frac{V(x + \varepsilon) - V(x - \varepsilon)}{2\varepsilon}
@@ -1807,23 +1845,116 @@ $$
 
 Where:
 
-$x$ is the input variable
-$\varepsilon$ is a small shift
+$x$ is the input variable $\varepsilon$ is a small shift
 
 This is a finite difference approach: generalizable and useful when analytical Greeks are unavailable
 
-This method works for any option and it still assumes that the function is smooth and approximable locally, like the ones coming from the closed form solution of the Black and Scholes model but it  breaks down with large shocks.
+This method works for any option and it still assumes that the function is smooth and approximable locally, like the ones coming from the closed form solution of the Black and Scholes model but it breaks down with large shocks.
 
-- Greeks give powerful local sensitivities
-- Good for quick P\&L estimates, hedging, and risk management
+All this has been done with an $\alpha = 1$ to not have a magnifying effect on the value due to the price per tick being generally very expensive
 
+-   Greeks give powerful local sensitivities
+-   Good for quick P&L estimates, hedging, and risk management
 
+**Temperature Sensitivity Delta**
+Shock the baseline temperature parameter 'a' akin to a change in price 
+
+```{r}
+shock <- 0.1
+params_up <- Tbar_params
+params_down <- Tbar_params
+params_up$a <- Tbar_params$a + shock
+params_down$a <- Tbar_params$a - shock
+
+price_up   <- temperature_option(trading_dates, 1000, params_up, vol_df, option_type = "call"  , alpha = 1)$price
+price_down <- temperature_option(trading_dates, 1000, params_down, vol_df, option_type = "call", alpha = 1)$price
+
+delta <- (price_up - price_down) / (2 * shock)
+
+data.frame(price_up, price_down, delta) %>% 
+  gt() %>% cols_label(price_up = "Price up", price_down = "Price down", delta = "Delta") %>% 
+  opt_stylize(5) %>% tab_header(paste("Delta with shock =",shock))
+```
+
+**Volatility Sensitivity Vega**
+Achieved by changing the fitted volatility function 
+```{r}
+shock <- 0.1
+vol_up <- vol_df
+vol_down <- vol_df
+vol_up$fvol <- vol_df$fvol + shock
+vol_down$fvol <- vol_df$fvol - shock
+
+price_up   <- temperature_option(trading_dates, 1000, params_up, vol_up, option_type = "call"  , alpha = 1)$price
+price_down <- temperature_option(trading_dates, 1000, params_down, vol_down, option_type = "call", alpha = 1)$price
+
+vega <- (price_up - price_down) / (2 * shock)
+
+data.frame(price_up, price_down, vega) %>% 
+  gt() %>% cols_label(price_up = "Price up", price_down = "Price down", vega = "Vega") %>% 
+  opt_stylize(5) %>% tab_header(paste("Vega with shock =",shock))
+```
+
+**Seasonality Sensitivity (Alpha Sensitivity)**
+Sensitivity to seasonal amplitude changes
+Where the negative shock means that the data is more seasonal
+
+```{r}
+shock <- 0.1
+params_up <- Tbar_params
+params_down <- Tbar_params
+params_up$alpha <- Tbar_params$alpha + shock
+params_down$alpha <- Tbar_params$alpha - shock
+
+price_up   <- temperature_option(trading_dates, 1000, params_up, vol_df, option_type = "call"  , alpha = 1)$price
+price_down <- temperature_option(trading_dates, 1000, params_down, vol_df, option_type = "call", alpha = 1)$price
+
+alpha_g <- (price_up - price_down) / (2 * shock)
+
+data.frame(price_up, price_down, alpha_g) %>% 
+  gt() %>% cols_label(price_up = "Price up", price_down = "Price down", alpha_g = "Alpha greek") %>% 
+  opt_stylize(5) %>% tab_header(paste("Seasonality greek with shock =",shock))
+```
+
+**Reference Temperature Greek**
+Now we are more in the realm of contract modifications which are not possible but stil greek as we are just changing a parameter
+
+```{r}
+shock <- 3
+price_up   <- temperature_option(trading_dates, 1000, Tbar_params, vol_df, option_type = "call", alpha = 1, ref_temperature = 18+shock)$price
+price_down <- temperature_option(trading_dates, 1000, Tbar_params, vol_df, option_type = "call", alpha = 1, ref_temperature = 18-shock)$price
+
+temp_g <- (price_up - price_down) / (2 * shock)
+
+data.frame(price_up, price_down, temp_g) %>% 
+  gt() %>% cols_label(price_up = "Price up", price_down = "Price down", temp_g = "Reference T Greek") %>% 
+  opt_stylize(5) %>% tab_header(paste("Reference Temperature Greek with shock =",shock))
+```
+
+**Time passing Sensitivity ( $\Theta$ )**
+This is probably the most out there since unlike financial options where time decay is purely about discounting, temperature derivatives have path-dependent payoffs. When you shorten the period, you're not just reducing time to expiration - you're fundamentally changing the underlying (total degree days accumulated).
+
+```{r}
+days_elapsed <- 3
+
+price_t0 <- temperature_option(trading_dates, 1000, Tbar_params, vol_df, option_type = "call", alpha = 1)$price
+
+# Option after some days have passed (shorter remaining period)
+remaining_dates <- trading_dates[(days_elapsed):length(trading_dates)]
+price_t1 <- temperature_option(remaining_dates, 1000, Tbar_params, vol_df, option_type = "call", alpha = 1)$price
+
+theta <- (price_t1 - price_t0) / days_elapsed
+
+data.frame(price_up, price_down, temp_g) %>% 
+  gt() %>% cols_label(price_up = "Price T0", price_down = "Price T1", temp_g = "Reference T Greek") %>% 
+  opt_stylize(5) %>% tab_header(paste("Theta with shock =", days_elapsed))
+```
 
 # Sidequests
 
 ## Sidequest: predicting temperatures in the future
 
-Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature one month from now 
+Right now on 11-5-2025 i want to do an experiment and actually see if at least in some way i can predict the weather using this model that i've built right now i want to predict the temperature one month from now
 
 ```{r forecast compared to real}
 #| warnings: False
@@ -1885,11 +2016,11 @@ ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+
 ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
 ```
 
+## Milan comparison
 
-## Milan comparison 
 i just moved from milan and was wondering about the distribution of climate here versus the one from milan
 
-```{r Milan comparison} 
+```{r Milan comparison}
 MILAN_RAW <- read.csv("Milan_DATA.csv", skip = 10)
 
 MIL_DATASET <- MILAN_RAW %>%
@@ -1968,8 +2099,3 @@ grid.arrange(
 beepr::beep(sound = 4)
 rsconnect::writeManifest()
 ```
-
-
-
-
-
