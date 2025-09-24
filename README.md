@@ -30,5 +30,27 @@ The main objectives are to:
 - **Interactive Visualizations**: Charts, heatmaps, and ribbons to clearly communicate seasonal patterns, model performance, and pricing outputs.  
 
 ## Usage
-Open
-To reproduce the HTML report download the `.qmd` file and render it 
+
+The project follows a clear workflow, from data acquisition to interactive reporting:
+
+1. **Download Climate Data**  
+   Historical temperature data is obtained from the [NASA Prediction Of Worldwide Energy Resources (POWER) Data Access Viewer (DAV)](https://power.larc.nasa.gov/data-access-viewer/). This dataset, from the Agroclimatology community, provides high-resolution and reliable meteorological measurements, ensuring reproducibility for climate research.
+
+2. **Data Preparation and Cleaning**  
+   The raw dataset is processed to handle missing values and compute key temperature metrics, including daily maximum, minimum, and average temperatures. Seasonal periods are defined to distinguish between winter and summer trends.
+
+3. **Exploratory Data Analysis**  
+   A series of visualizations and statistical summaries are produced to explore seasonal patterns, long-term trends, and variability across years. This includes ribbon charts, seasonal decomposition, and volatility analysis.
+
+4. **Modeling Temperature Dynamics**  
+   The project uses a mean-reverting stochastic process to model temperature behavior, incorporating both deterministic seasonal trends and stochastic volatility components. Multiple modeling approaches are explored (Fourier, splines, GAMs) with a focus on interpretability and practical relevance.
+
+5. **Monte Carlo Simulations**  
+   Simulated temperature paths are generated to project potential future scenarios. These simulations form the basis for derivative pricing and risk assessment.
+
+6. **Option Pricing and Sensitivities**  
+   Heating and Cooling Degree Day options are priced under risk-neutral assumptions. Sensitivity measures (Greeks) are computed to illustrate how payouts respond to changes in temperature, volatility, seasonality, and time.
+
+7. **Reporting and Visualization**  
+   All results, visualizations, and analyses are compiled into an interactive **Quarto HTML report**. The report can be rendered directly from the Quarto document, or the standalone script `climate_derivatives_just_code.R` can be used to reproduce the key calculations and outputs.
+
