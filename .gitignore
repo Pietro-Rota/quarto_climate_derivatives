@@ -8,3 +8,16 @@
 
 /.quarto/
 /_site/
+
+# IDE and editor settings
+.vscode/
+
+# Quarto generated files
+quarto_climate_derivatives_files/
+quarto_climate_derivatives.pdf
+
+# RStudio project files
+quarto_climate_derivatives.Rproj
+
+# Temporary/auxiliary files
+header.tex

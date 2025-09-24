@@ -5269,7 +5269,7 @@
       "checksum": "8c9340fa6511be45f718ef2f0fcf1720"
     },
     "climate_derivatives_just_code.R": {
-      "checksum": "2a8a35aaa136254fc612d1eeb04169f2"
+      "checksum": "56fa7a079625670894d142371612a6a4"
     },
     "DISNEY DATA.csv": {
       "checksum": "c1ef8e50714a9f909eaefc369d0cc828"
@@ -5284,7 +5284,7 @@
       "checksum": "dabbb6e5701d80c80f191b487f940735"
     },
     "quarto_climate_derivatives.html": {
-      "checksum": "bd145e606f96848bc2c51c07a6d2ce99"
+      "checksum": "de1e5105dc49a2475b61d8e7a0f42135"
     },
     "quarto_climate_derivatives.pdf": {
       "checksum": "ee2c275a5df47fcace20154e48280681"
@@ -5296,7 +5296,7 @@
       "checksum": "75fcd521af0074adabc0af32ea6aed05"
     },
     "quarto_climate_derivatives_files/figure-html/1sim-1.png": {
-      "checksum": "c29c4f04fe2109864c31eb755f7e0b50"
+      "checksum": "25ba8cbfd2b7e66103c88919d078c778"
     },
     "quarto_climate_derivatives_files/figure-html/avg hottness-1.png": {
       "checksum": "e9b0be7b62234189c17403eaa4c1bd89"
@@ -5356,7 +5356,7 @@
       "checksum": "8d04d4711b2b0e350eb9b14ac166cca3"
     },
     "quarto_climate_derivatives_files/figure-html/hottest winter-1.png": {
-      "checksum": "f9eddba9cd51f3c87ff85b5d5306396a"
+      "checksum": "2e88c3c71406ca2f824221ed7743bb30"
     },
     "quarto_climate_derivatives_files/figure-html/Initial Viz-1.png": {
       "checksum": "6e2c12040dd2dad3d8d0844696e46a2c"
@@ -5371,10 +5371,10 @@
       "checksum": "fbfe55931f2beac795823722d0dfd38f"
     },
     "quarto_climate_derivatives_files/figure-html/loop to get graph-1.png": {
-      "checksum": "1e838e01e982205acee859134f85837c"
+      "checksum": "c8d5f78e8f50e954b4e41590ad48aee7"
     },
     "quarto_climate_derivatives_files/figure-html/loop to get graph-2.png": {
-      "checksum": "c5a1d3be6c1559793fb0a98ce1512428"
+      "checksum": "fd93ba740c2212763b8fdc8110ad3daa"
     },
     "quarto_climate_derivatives_files/figure-html/Milan comparison-1.png": {
       "checksum": "65bdac6cfe41f0cd62c05edbc4c30462"
@@ -5383,13 +5383,13 @@
       "checksum": "babf68880b58af472521ab7a0fa589ee"
     },
     "quarto_climate_derivatives_files/figure-html/MNC sym-1.png": {
-      "checksum": "430b2e281c393e6291bc918997c6ecbe"
+      "checksum": "e8dd320c238194345da14ae31d1973a2"
     },
     "quarto_climate_derivatives_files/figure-html/MNC sym-2.png": {
-      "checksum": "1bcac8fe31e8f5015eef39b39541a689"
+      "checksum": "ed71eeed679dd9bc29057f477159616f"
     },
     "quarto_climate_derivatives_files/figure-html/MNC sym-3.png": {
-      "checksum": "eb0024b8c205698c1317959b5c17a356"
+      "checksum": "07cd7811c69f5792d90f24af6a8f15de"
     },
     "quarto_climate_derivatives_files/figure-html/model_stats-1.png": {
       "checksum": "09198d909fd9161e0fa9c69232985398"
@@ -5398,10 +5398,10 @@
       "checksum": "e4abd1613e5a5b699e32baef8432db9b"
     },
     "quarto_climate_derivatives_files/figure-html/OU2-1.png": {
-      "checksum": "977bca75a848025f02e0728952e7a63b"
+      "checksum": "8e5f3d70ce8626d91f2bbc89e03b1e33"
     },
     "quarto_climate_derivatives_files/figure-html/plot of model components-1.png": {
-      "checksum": "ebdb8b3e3fa6834f1432a227b551dabc"
+      "checksum": "e1167233c758cb971d85b14472d23894"
     },
     "quarto_climate_derivatives_files/figure-html/polar viz-1.png": {
       "checksum": "f7715a766f757da0e04c49cd9629de8a"
@@ -5428,10 +5428,10 @@
       "checksum": "55582c5b137cbfd469f021987347c330"
     },
     "quarto_climate_derivatives_files/figure-html/unnamed-chunk-2-1.png": {
-      "checksum": "374321ef12d6d9651eecbda3390181f9"
+      "checksum": "9a154c52f9e32cb70b4917048a06628e"
     },
     "quarto_climate_derivatives_files/figure-html/unnamed-chunk-2-2.png": {
-      "checksum": "791fe5fdf2de897193b8e86a15dfcca3"
+      "checksum": "7311e448e9a86b69c2910e318f7c780e"
     },
     "quarto_climate_derivatives_files/figure-html/vol modeling-1.png": {
       "checksum": "4becb60c37e324f35789d78ebbbcc73e"
