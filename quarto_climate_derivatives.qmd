@@ -13,13 +13,15 @@ format:
     toc: true
   pdf:
     latex-engine: xelatex
+    fig-dpi: 500
+    fig-align: center
+    code-tools: false
     embed-resources: true
     code-block: false
     citation-package: natbib
     includes:
       in-header: header.tex
-    code-tools: true
-    code-fold: true
+    code-fold: false
     df-print: kable
     number-sections: true
     pdf-metadata:
@@ -53,7 +55,7 @@ params:
 ```{r setup}
 #| title: setup
 #| include: false
-source("C:/Users/pietr/OneDrive/Desktop/formula.main.R")
+source("C:\\Users\\pietr\\OneDrive - City St George's, University of London\\Desktop\\formula.main.R")
 Sys.setlocale("LC_TIME", "English") # set output language in English
 theme_set(theme_minimal())
 knitr::opts_chunk$set(fig.align = 'center')
@@ -88,7 +90,7 @@ rm(session_info)
 Functions loaded from main
 
 ```{r functions_loaded, echo=FALSE}
-file <- "C:\\Users\\pietr\\OneDrive\\Desktop\\angolo in alto a destra\\quarto_climate_derivatives - Copia\\quarto_climate_derivatives.qmd"
+file <- "C:\\Users\\pietr\\OneDrive\\Documenti\\GitHub\\Climate-Derivative-Modeling\\quarto_climate_derivatives.qmd"
 when_rendering(functions_loaded(file))
 ```
 
@@ -2006,16 +2008,6 @@ for forecasting purposes it means a couple of things: that in the short-term my 
 
 This model doesn't really account for Volatility clustering, like how temperature tends to have time-varying volatility (e.g., summer vs. winter variability). which is the part of the OU that we still need to model
 
-## forecast seasonal plots
-
-```{r ggforecast}
-ts(data = temps$T_AVG, frequency = 12, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::ggseasonplot()
-ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagplot()
-ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagchull()
-
-ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
-```
-
 ## Milan comparison
 
 i just moved from milan and was wondering about the distribution of climate here versus the one from milan
@@ -2096,6 +2088,6 @@ grid.arrange(
 
 ```{r beep}
 #| include: False
+# rsconnect::writeManifest()
 beepr::beep(sound = 4)
-rsconnect::writeManifest()
 ```

@@ -1,7 +1,7 @@
 #* AUTO-GENERATED STANDALONE R SCRIPT ----
 #* Generated from R Markdown file using extract_r_code()
 #* Source file: quarto_climate_derivatives.qmd
-#* Generated on: 2025-09-24 18:09:45.154019
+#* Generated on: 2025-10-27 14:14:41.358497
 
 #* REQUIRED PACKAGES ----
 #? If you don't have these packages, run: install.packages(c("caret", "DT", "forecast", "gt", "leaflet", "MASS", "nlstools", "purrr", "rugarch", "tibble", "timeSeries", "zoo", "colorspace", "e1071", "gganimate", "gtExtras", "lubridate", "mgcv", "PerformanceAnalytics", "quantmod", "splines", "tidyr", "TTR", " ", "dplyr", "fBasics", "ggplot2", "knitr", "magrittr", "nlme", "plotly", "reshape2", "stats4", "timeDate", "xts", " "))
@@ -123,7 +123,7 @@ desc_df <- function (data, quantiles = c(0.01, 0.25, 0.75, 0.99), digits = 4)
     as.data.frame(round(t(stats), digits = digits))
 }
 
-extract_r_code <- function (input_file, output_file, include_main = TRUE, source_path = "C:/Users/pietr/OneDrive/Desktop/formula.main.R") 
+extract_r_code <- function (input_file, output_file, include_main = TRUE, source_path = "C:\\Users\\pietr\\OneDrive - City St George's, University of London\\Desktop\\formula.main.R") 
 {
     lines <- readLines(input_file)
     in_chunk <- FALSE
@@ -254,11 +254,25 @@ find_outliers <- function (x, yes = 1, no = 0)
     return(df)
 }
 
-quickbarplot <- function (data, title = NULL, plot_engine = c("ggplot", "plotly"), xlab = "Category", ylab = "Value", show_legend = FALSE, subtitle = NULL, caption = NULL, bar_width = 0.8, legend_name = "Variable", legend_position = c("right", "left", "bottom", "top"), alpha = 1, facet_wrap = FALSE, show_x = TRUE, palette = c("custom", "gradiant", "none", "any_color")) 
+quickbarplot <- function (data, title = NULL, plot_engine = c("ggplot", "plotly"), xlab = "Category", ylab = "Value", show_legend = FALSE, subtitle = NULL, caption = NULL, bar_width = 0.8, legend_name = "Variable", legend_position = c("right", "left", "bottom", "top"), alpha = 1, facet_wrap = FALSE, show_x = TRUE, palette = c("custom", "none", "gradient", "or just put here any color"), gradient_colors = c("#114c89", "gray82")) 
 {
     custom_palette <- rep(c("firebrick", "darkblue", "#006400", "gray30", "#457575", "#6100a8", "orange2", "brown", "#483D8B", "#556B2F", "#8B008B", "#5F9EA0", "#6B8E23", "#9932CC"), 1000)
     my_data_long <- melt_any(data)
-    plot <- ggplot(my_data_long, aes(x = variable, y = value, fill = factor(variable), text = paste0("Name: ", variable, "<br>Value: ", value))) + geom_col(width = min(bar_width, 1), alpha = alpha) + labs(title = title, subtitle = subtitle, caption = caption, x = xlab, y = ylab) + scale_fill_manual(name = legend_name, values = custom_palette) + theme(legend.position = legend_position[1], plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+    plot <- ggplot(my_data_long, aes(x = variable, y = value, text = paste0("Name: ", variable, "<br>Value: ", value)))
+    palette_choice <- palette[1]
+    if (palette_choice == "custom") {
+        plot <- plot + geom_col(aes(fill = factor(variable)), width = min(bar_width, 1), alpha = alpha) + scale_fill_manual(name = legend_name, values = custom_palette)
+    }
+    else if (palette_choice == "none") {
+        plot <- plot + geom_col(width = min(bar_width, 1), alpha = alpha)
+    }
+    else if (palette_choice == "gradient") {
+        plot <- plot + geom_col(aes(fill = as.numeric(factor(variable))), width = min(bar_width, 1), alpha = alpha) + scale_fill_gradient(name = legend_name, low = gradient_colors[1], high = gradient_colors[2])
+    }
+    else {
+        plot <- plot + geom_col(width = min(bar_width, 1), alpha = alpha, fill = palette_choice)
+    }
+    plot <- plot + labs(title = title, subtitle = subtitle, caption = caption, x = xlab, y = ylab) + theme(legend.position = legend_position[1], plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
     if (nrow(my_data_long) > 20) {
         plot <- plot + theme(axis.text.x = element_text(angle = 45, hjust = 1))
     }
@@ -370,7 +384,7 @@ session_info$platform
 rm(session_info)
 
 ## functions_loaded ----
-file <- "C:\\Users\\pietr\\OneDrive\\Desktop\\angolo in alto a destra\\quarto_climate_derivatives - Copia\\quarto_climate_derivatives.qmd"
+file <- "C:\\Users\\pietr\\OneDrive\\Documenti\\GitHub\\Climate-Derivative-Modeling\\quarto_climate_derivatives.qmd"
 when_rendering(functions_loaded(file))
 
 ## required_packages ----
@@ -1878,15 +1892,6 @@ ggplot() +
   geom_ribbon(data = forecast_df, aes(x = Date, ymin = Lower, ymax = Upper), alpha = 0.2) +
   labs(title = "Temperature Forecast with 95% CI", y = "Temperature (°C)", x = "Date") 
 
-#* forecast seasonal plots ----
-
-## ggforecast ----
-ts(data = temps$T_AVG, frequency = 12, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::ggseasonplot()
-ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagplot()
-ts(data = temps$T_AVG, frequency = 365.25, start = temps$DAY[1]) %>% tail(365*2+ last(temps$DOY)) %>% forecast::gglagchull()
-
-ts(data = temps$T_AVG, frequency = 365, start = temps$DAY[1]) %>% tail(365*10+ last(temps$DOY)) %>% forecast::ggtsdisplay(plot.type = "scatter", points = F, smooth = T, lag.max = 20, theme=theme_minimal())
-
 #* Milan comparison ----
 
 ## Milan comparison ----
@@ -1963,5 +1968,5 @@ grid.arrange(
 )
 
 ## beep ----
+# rsconnect::writeManifest()
 beepr::beep(sound = 4)
-rsconnect::writeManifest()
