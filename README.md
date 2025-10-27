@@ -7,7 +7,7 @@ This repository contains a comprehensive analysis of temperature-based weather d
 Weather derivatives are financial instruments that help businesses hedge against climate-related risks, such as unusually hot summers or cold winters. This project focuses on **Heating Degree Day (HDD)** and **Cooling Degree Day (CDD)** options, using historical temperature data to simulate future scenarios and estimate derivative prices.
 
 The main objectives are to:  
-- Explore and visualize historical temperature data (NASA POWER | Data Access Viewer (DAV)) to identify seasonal patterns and long-term trends.  
+- Explore and visualize historical temperature data (NASA POWER Data Access Viewer (DAV)) to identify seasonal patterns and long-term trends.  
 - Model temperature dynamics using mean-reverting stochastic processes, incorporating both deterministic and stochastic components.  
 - Simulate future temperature paths via Monte Carlo methods.  
 - Price temperature options and estimate sensitivities (Greeks) for practical risk management insights.  
